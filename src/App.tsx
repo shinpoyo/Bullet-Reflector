@@ -78,7 +78,27 @@ export default function App() {
 
   // Reference for instant touch PARRY button & apply skills
   const requestParryRef = useRef<(() => void) | null>(null);
+  const requestDashRef = useRef<(() => void) | null>(null);
   const applySkillRef = useRef<((skillId: any) => void) | null>(null);
+
+  const [controlMode, setControlMode] = useState<'JOYSTICK' | 'SLING'>(() => {
+    const saved = localStorage.getItem('bullet_reflector_ctrl_mode');
+    return saved === 'SLING' ? 'SLING' : 'JOYSTICK';
+  });
+
+  const handleToggleControlMode = useCallback(() => {
+    setControlMode((prev) => {
+      const next = prev === 'JOYSTICK' ? 'SLING' : 'JOYSTICK';
+      localStorage.setItem('bullet_reflector_ctrl_mode', next);
+      return next;
+    });
+  }, []);
+
+  const handleDashPress = useCallback(() => {
+    if (requestDashRef.current) {
+      requestDashRef.current();
+    }
+  }, []);
 
   // Load High Score
   useEffect(() => {
@@ -244,7 +264,9 @@ export default function App() {
           onUpdateStats={handleUpdateStats}
           onTriggerLevelUp={handleTriggerLevelUp}
           onRequestParryRef={requestParryRef}
+          onRequestDashRef={requestDashRef}
           onApplySkillRef={applySkillRef}
+          controlMode={controlMode}
         />
       )}
 
@@ -266,6 +288,9 @@ export default function App() {
           onPause={handlePause}
           onRestart={handleRestart}
           onParryPress={handleParryPress}
+          onDashPress={handleDashPress}
+          controlMode={controlMode}
+          onToggleControlMode={handleToggleControlMode}
         />
       )}
 

@@ -18,6 +18,14 @@ interface RenderOptions {
   wallFlashes: WallFlash[];
   trajectorySegments: RaycastSegment[];
   mousePos: { x: number; y: number };
+  virtualJoystick?: {
+    active: boolean;
+    startX: number;
+    startY: number;
+    currentX: number;
+    currentY: number;
+    radius: number;
+  };
   screenShake: number;
   time: number;
   stats?: GameStats;
@@ -41,6 +49,7 @@ export function renderGameScene({
   wallFlashes,
   trajectorySegments,
   mousePos,
+  virtualJoystick,
   screenShake,
   time,
   stats,
@@ -549,6 +558,71 @@ function drawPlayer(
   if (stats && stats.chain > 5) {
     drawComboMultiplierAura(ctx, player, stats, time);
   }
+
+  ctx.restore();
+
+  // Screen-Space Virtual Touch Joystick Overlay (Smartphone / Touch controls)
+  if (virtualJoystick && virtualJoystick.active) {
+    drawVirtualJoystick(ctx, virtualJoystick);
+  }
+}
+
+/**
+ * Screen-Space Virtual Touch Joystick Overlay for mobile & tablet gameplay
+ */
+function drawVirtualJoystick(
+  ctx: CanvasRenderingContext2D,
+  joystick: {
+    startX: number;
+    startY: number;
+    currentX: number;
+    currentY: number;
+    radius: number;
+  }
+) {
+  const { startX, startY, currentX, currentY, radius = 46 } = joystick;
+  ctx.save();
+
+  // Outer translucent cyber ring
+  ctx.beginPath();
+  ctx.arc(startX, startY, radius, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(15, 23, 42, 0.45)';
+  ctx.fill();
+  ctx.lineWidth = 2.5;
+  ctx.strokeStyle = 'rgba(56, 189, 248, 0.6)';
+  ctx.shadowColor = '#38BDF8';
+  ctx.shadowBlur = 10;
+  ctx.stroke();
+
+  // 4 directional tick notches
+  const tickLen = 6;
+  [0, Math.PI / 2, Math.PI, (Math.PI * 3) / 2].forEach((angle) => {
+    ctx.beginPath();
+    ctx.moveTo(startX + Math.cos(angle) * (radius - tickLen), startY + Math.sin(angle) * (radius - tickLen));
+    ctx.lineTo(startX + Math.cos(angle) * (radius + tickLen), startY + Math.sin(angle) * (radius + tickLen));
+    ctx.strokeStyle = 'rgba(56, 189, 248, 0.85)';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  });
+
+  // Connecting neon vector line
+  ctx.beginPath();
+  ctx.moveTo(startX, startY);
+  ctx.lineTo(currentX, currentY);
+  ctx.strokeStyle = 'rgba(56, 189, 248, 0.65)';
+  ctx.lineWidth = 3.5;
+  ctx.stroke();
+
+  // Glowing thumb knob
+  ctx.beginPath();
+  ctx.arc(currentX, currentY, 18, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(56, 189, 248, 0.9)';
+  ctx.shadowColor = '#38BDF8';
+  ctx.shadowBlur = 16;
+  ctx.fill();
+  ctx.lineWidth = 2.5;
+  ctx.strokeStyle = '#FFFFFF';
+  ctx.stroke();
 
   ctx.restore();
 }

@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { Bullet, Enemy, ExpGem, FloatingText, GameStats, LightningBolt, Particle, Player, RaycastSegment, Shockwave, Vector2D, WallFlash } from '../types/game';
-import { calculateSlingTrajectory, clamp, updateGameSimulation, vecLen, vecNorm, vecScale } from '../game/physics';
+import { calculateSlingTrajectory, clamp, updateGameSimulation, vecDist, vecLen, vecNorm, vecScale, vecSub } from '../game/physics';
 import { renderGameScene } from '../game/renderer';
 import { getWaveArenaScale, spawnWaveEnemies } from '../game/waveManager';
 import { soundManager } from '../audio/soundManager';
@@ -12,7 +12,9 @@ interface GameCanvasProps {
   onTriggerLevelUp: () => void;
   isPaused: boolean;
   onRequestParryRef?: React.MutableRefObject<(() => void) | null>;
+  onRequestDashRef?: React.MutableRefObject<(() => void) | null>;
   onApplySkillRef?: React.MutableRefObject<((skillId: any) => void) | null>;
+  controlMode?: 'JOYSTICK' | 'SLING';
 }
 
 export const GameCanvas: React.FC<GameCanvasProps> = ({
@@ -21,10 +23,14 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
   onTriggerLevelUp,
   isPaused,
   onRequestParryRef,
+  onRequestDashRef,
   onApplySkillRef,
+  controlMode = 'JOYSTICK',
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const touchPointerIdRef = useRef<number | null>(null);
+  const slingPointerIdRef = useRef<number | null>(null);
 
   // High score tracking
   const [highScore, setHighScore] = useState<number>(() => {
@@ -45,6 +51,14 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     wallFlashes: WallFlash[];
     stats: GameStats;
     mousePos: Vector2D;
+    virtualJoystick: {
+      active: boolean;
+      startX: number;
+      startY: number;
+      currentX: number;
+      currentY: number;
+      radius: number;
+    };
     heldKeys: Set<string>;
     screenShake: number;
     hitStopMs: number;
@@ -59,6 +73,14 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     isAimingDrag: boolean;
     dragStartPos: Vector2D;
   }>({
+    virtualJoystick: {
+      active: false,
+      startX: 0,
+      startY: 0,
+      currentX: 0,
+      currentY: 0,
+      radius: 46,
+    },
     player: {
       x: 400,
       y: 300,
@@ -169,6 +191,66 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     }
   }, [triggerParry, onRequestParryRef]);
 
+  // Expose instant Dash trigger for UI button / Shift key
+  const triggerDash = useCallback(() => {
+    const state = gameStateRef.current;
+    if (isPaused || state.player.hp <= 0) return;
+
+    let dashDir: Vector2D;
+    const currentSpeed = vecLen({ x: state.player.vx, y: state.player.vy });
+
+    if (state.virtualJoystick.active) {
+      const dx = state.virtualJoystick.currentX - state.virtualJoystick.startX;
+      const dy = state.virtualJoystick.currentY - state.virtualJoystick.startY;
+      if (Math.hypot(dx, dy) > 4) {
+        dashDir = vecNorm({ x: dx, y: dy });
+      } else {
+        dashDir = { x: Math.cos(state.player.aimAngle), y: Math.sin(state.player.aimAngle) };
+      }
+    } else if (currentSpeed > 35) {
+      dashDir = vecNorm({ x: state.player.vx, y: state.player.vy });
+    } else {
+      let nearestEn: Enemy | null = null;
+      let minDist = Infinity;
+      for (const e of state.enemies) {
+        if (e.hp <= 0) continue;
+        const d = vecDist({ x: state.player.x, y: state.player.y }, { x: e.x, y: e.y });
+        if (d < minDist) {
+          minDist = d;
+          nearestEn = e;
+        }
+      }
+      if (nearestEn) {
+        dashDir = vecNorm(vecSub({ x: nearestEn.x, y: nearestEn.y }, { x: state.player.x, y: state.player.y }));
+      } else {
+        dashDir = { x: Math.cos(state.player.aimAngle), y: Math.sin(state.player.aimAngle) };
+      }
+    }
+
+    const tackleMult = state.player.tackleMultiplier || 1.0;
+    const dashSpeed = clamp(580 * tackleMult, 500, 800);
+    state.player.vx = dashDir.x * dashSpeed;
+    state.player.vy = dashDir.y * dashSpeed;
+    soundManager.playSlingDash();
+
+    state.shockwaves.push({
+      x: state.player.x,
+      y: state.player.y,
+      radius: 10,
+      maxRadius: 55,
+      alpha: 1,
+      color: '#38BDF8',
+      lineWidth: 3.5,
+      expansionSpeed: 380,
+    });
+  }, [isPaused]);
+
+  useEffect(() => {
+    if (onRequestDashRef) {
+      onRequestDashRef.current = triggerDash;
+    }
+  }, [triggerDash, onRequestDashRef]);
+
   useEffect(() => {
     if (onApplySkillRef) {
       onApplySkillRef.current = (skillId: any) => {
@@ -271,6 +353,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
               wallFlashes: state.wallFlashes,
               trajectorySegments: [],
               mousePos: state.mousePos,
+              virtualJoystick: state.virtualJoystick,
               screenShake: state.screenShake,
               time: currentTime / 1000,
             });
@@ -285,7 +368,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
       }
 
       // Continuous Keyboard Micro-movement (WASD / Arrows)
-      const moveSpeed = 220;
+      const moveSpeed = 240;
       let moveX = 0;
       let moveY = 0;
       if (state.heldKeys.has('KeyW') || state.heldKeys.has('ArrowUp')) moveY -= 1;
@@ -295,8 +378,28 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
 
       if (moveX !== 0 || moveY !== 0) {
         const moveDir = vecNorm({ x: moveX, y: moveY });
-        state.player.vx += moveDir.x * moveSpeed * rawDt * 8;
-        state.player.vy += moveDir.y * moveSpeed * rawDt * 8;
+        state.player.vx += moveDir.x * moveSpeed * rawDt * 9;
+        state.player.vy += moveDir.y * moveSpeed * rawDt * 9;
+        state.player.aimAngle = Math.atan2(moveDir.y, moveDir.x);
+      }
+
+      // Continuous Touch Virtual Joystick Steering (Smartphone & Tablet)
+      if (state.virtualJoystick.active) {
+        const dx = state.virtualJoystick.currentX - state.virtualJoystick.startX;
+        const dy = state.virtualJoystick.currentY - state.virtualJoystick.startY;
+        const dist = Math.hypot(dx, dy);
+        const deadzone = 4;
+        const maxR = state.virtualJoystick.radius || 46;
+
+        if (dist > deadzone) {
+          const normMagnitude = clamp((dist - deadzone) / (maxR - deadzone), 0, 1);
+          const dirX = dx / dist;
+          const dirY = dy / dist;
+          const touchMoveSpeed = 280; // Smooth, agile, responsive 360-degree dodging!
+          state.player.vx += dirX * normMagnitude * touchMoveSpeed * rawDt * 10;
+          state.player.vy += dirY * normMagnitude * touchMoveSpeed * rawDt * 10;
+          state.player.aimAngle = Math.atan2(dirY, dirX);
+        }
       }
 
       // Calculate Sling Trajectory if aiming
@@ -425,6 +528,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
             wallFlashes: state.wallFlashes,
             trajectorySegments,
             mousePos: state.mousePos,
+            virtualJoystick: state.virtualJoystick,
             screenShake: state.screenShake,
             time: currentTime / 1000,
             stats: state.stats,
@@ -444,9 +548,14 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     const state = gameStateRef.current;
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.code === 'Space' || e.code === 'KeyZ' || e.code === 'ShiftLeft' || e.code === 'ShiftRight') {
+      if (e.code === 'Space' || e.code === 'KeyZ') {
         e.preventDefault();
         triggerParry();
+        return;
+      }
+      if (e.code === 'ShiftLeft' || e.code === 'ShiftRight' || e.code === 'KeyC' || e.code === 'KeyK') {
+        e.preventDefault();
+        triggerDash();
         return;
       }
       if (e.code === 'KeyR' || e.code === 'Escape') {
@@ -462,6 +571,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     const handleBlur = () => {
       state.heldKeys.clear();
       state.player.isAimingSling = false;
+      state.virtualJoystick.active = false;
     };
 
     window.addEventListener('keydown', handleKeyDown);
@@ -473,7 +583,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
       window.removeEventListener('keyup', handleKeyUp);
       window.removeEventListener('blur', handleBlur);
     };
-  }, [triggerParry]);
+  }, [triggerParry, triggerDash]);
 
   // Converts canvas screen coordinates to world arena coordinates accounting for camera zoom
   const screenToWorld = useCallback((clientX: number, clientY: number): Vector2D => {
@@ -491,11 +601,11 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     return { x: worldX, y: worldY };
   }, []);
 
-  // Pointer / Touch Handlers for Sling-shot Aiming and Deflect Aiming
+  // Pointer / Touch Handlers for Virtual Joystick Movement & Sling-shot Aiming
   const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    const worldPos = screenToWorld(e.clientX, e.clientY);
-    const state = gameStateRef.current;
-    state.mousePos = worldPos;
+    e.preventDefault();
+    const canvas = canvasRef.current;
+    if (!canvas) return;
 
     // Right-click is parry!
     if (e.button === 2) {
@@ -503,44 +613,109 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
       return;
     }
 
-    // Left click / touch drag: start sling aim!
-    state.isAimingDrag = true;
-    state.dragStartPos = worldPos;
-    state.player.isAimingSling = true;
-    state.player.slingStart = { x: state.player.x, y: state.player.y };
-    state.player.slingCurrent = worldPos;
-  };
-
-  const handlePointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    const rect = canvas.getBoundingClientRect();
+    const screenX = e.clientX - rect.left;
+    const screenY = e.clientY - rect.top;
     const worldPos = screenToWorld(e.clientX, e.clientY);
+
     const state = gameStateRef.current;
     state.mousePos = worldPos;
 
-    if (state.isAimingDrag && state.player.isAimingSling) {
+    if (controlMode === 'SLING') {
+      state.isAimingDrag = true;
+      state.dragStartPos = worldPos;
+      state.player.isAimingSling = true;
+      state.player.slingStart = { x: state.player.x, y: state.player.y };
       state.player.slingCurrent = worldPos;
+      slingPointerIdRef.current = e.pointerId;
+    } else {
+      // Default: Virtual Joystick mode (Smooth 360-degree mobile thumb dodging)
+      touchPointerIdRef.current = e.pointerId;
+      state.virtualJoystick.active = true;
+      state.virtualJoystick.startX = screenX;
+      state.virtualJoystick.startY = screenY;
+      state.virtualJoystick.currentX = screenX;
+      state.virtualJoystick.currentY = screenY;
+    }
+
+    try {
+      canvas.setPointerCapture(e.pointerId);
+    } catch {
+      // Ignore
     }
   };
 
-  const handlePointerUp = () => {
+  const handlePointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const screenX = e.clientX - rect.left;
+    const screenY = e.clientY - rect.top;
+    const worldPos = screenToWorld(e.clientX, e.clientY);
+
     const state = gameStateRef.current;
-    if (state.isAimingDrag && state.player.isAimingSling) {
-      const pullVector = {
-        x: state.player.x - state.player.slingCurrent.x,
-        y: state.player.y - state.player.slingCurrent.y,
-      };
-      const pullDist = vecLen(pullVector);
+    state.mousePos = worldPos;
 
-      if (pullDist > 20) {
-        // Launch sling dash!
-        const launchDir = vecNorm(pullVector);
-        const launchSpeed = clamp(pullDist * 5, 200, 750);
-        state.player.vx = launchDir.x * launchSpeed;
-        state.player.vy = launchDir.y * launchSpeed;
-        soundManager.playSlingDash();
+    if (controlMode === 'SLING') {
+      if (state.isAimingDrag && state.player.isAimingSling && e.pointerId === slingPointerIdRef.current) {
+        state.player.slingCurrent = worldPos;
       }
+    } else {
+      if (state.virtualJoystick.active && e.pointerId === touchPointerIdRef.current) {
+        const dx = screenX - state.virtualJoystick.startX;
+        const dy = screenY - state.virtualJoystick.startY;
+        const dist = Math.hypot(dx, dy);
+        const maxR = state.virtualJoystick.radius || 46;
 
-      state.isAimingDrag = false;
-      state.player.isAimingSling = false;
+        if (dist > maxR) {
+          state.virtualJoystick.currentX = state.virtualJoystick.startX + (dx / dist) * maxR;
+          state.virtualJoystick.currentY = state.virtualJoystick.startY + (dy / dist) * maxR;
+        } else {
+          state.virtualJoystick.currentX = screenX;
+          state.virtualJoystick.currentY = screenY;
+        }
+      }
+    }
+  };
+
+  const handlePointerUp = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    const canvas = canvasRef.current;
+    if (canvas) {
+      try {
+        canvas.releasePointerCapture(e.pointerId);
+      } catch {
+        // Ignore
+      }
+    }
+
+    const state = gameStateRef.current;
+
+    if (controlMode === 'SLING') {
+      if (state.isAimingDrag && state.player.isAimingSling && e.pointerId === slingPointerIdRef.current) {
+        const pullVector = {
+          x: state.player.x - state.player.slingCurrent.x,
+          y: state.player.y - state.player.slingCurrent.y,
+        };
+        const pullDist = vecLen(pullVector);
+
+        if (pullDist > 20) {
+          const launchDir = vecNorm(pullVector);
+          const launchSpeed = clamp(pullDist * 5, 200, 750);
+          state.player.vx = launchDir.x * launchSpeed;
+          state.player.vy = launchDir.y * launchSpeed;
+          state.player.isKnockedByPlayer = true;
+          soundManager.playSlingDash();
+        }
+
+        state.isAimingDrag = false;
+        state.player.isAimingSling = false;
+        slingPointerIdRef.current = null;
+      }
+    } else {
+      if (e.pointerId === touchPointerIdRef.current) {
+        state.virtualJoystick.active = false;
+        touchPointerIdRef.current = null;
+      }
     }
   };
 
@@ -551,6 +726,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerUp}
         onContextMenu={(e) => {
           e.preventDefault();
         }}

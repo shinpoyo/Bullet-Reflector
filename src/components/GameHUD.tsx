@@ -11,6 +11,9 @@ interface GameHUDProps {
   onPause: () => void;
   onRestart: () => void;
   onParryPress: () => void;
+  onDashPress?: () => void;
+  controlMode?: 'JOYSTICK' | 'SLING';
+  onToggleControlMode?: () => void;
 }
 
 export const GameHUD: React.FC<GameHUDProps> = ({
@@ -21,6 +24,9 @@ export const GameHUD: React.FC<GameHUDProps> = ({
   onPause,
   onRestart,
   onParryPress,
+  onDashPress,
+  controlMode = 'JOYSTICK',
+  onToggleControlMode,
 }) => {
   const isParryReady = player.parryCooldownTimer <= 0;
   const activeSkillEntries = Object.entries(player.skills || {}) as [SkillId, number][];
@@ -120,8 +126,18 @@ export const GameHUD: React.FC<GameHUDProps> = ({
               </span>
             </div>
 
-            {/* Sound, Retry & Pause Buttons */}
+            {/* Sound, Retry, Mode & Pause Buttons */}
             <div className="flex items-center gap-1">
+              {onToggleControlMode && (
+                <button
+                  onClick={onToggleControlMode}
+                  className="px-2 py-1 rounded-lg bg-slate-800/80 hover:bg-slate-700 border border-slate-700/60 text-cyan-300 text-[10px] sm:text-xs font-mono font-semibold transition-colors cursor-pointer"
+                  title="Toggle movement mode (Joystick / Slingshot)"
+                  aria-label="Toggle Movement Mode"
+                >
+                  {controlMode === 'JOYSTICK' ? '🕹️ STICK' : '🏹 SLING'}
+                </button>
+              )}
               <button
                 onClick={onRestart}
                 className="p-1.5 sm:p-2 rounded-lg bg-slate-800/80 hover:bg-slate-700 border border-slate-700/60 text-slate-300 hover:text-cyan-400 transition-colors cursor-pointer"
@@ -272,10 +288,10 @@ export const GameHUD: React.FC<GameHUDProps> = ({
           </div>
         ) : null}
 
-        {/* Bottom Status Cluster & Mobile Parry Button */}
+        {/* Bottom Status Cluster & Mobile Controls */}
         <div className="flex items-end justify-between w-full pb-1 sm:pb-3">
           {/* Parry status & Timing feedback */}
-          <div className="flex flex-col gap-0.5 sm:gap-1 bg-slate-900/85 border border-slate-800/80 px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-lg backdrop-blur-xs max-w-[170px] sm:max-w-xs pointer-events-auto">
+          <div className="flex flex-col gap-0.5 sm:gap-1 bg-slate-900/85 border border-slate-800/80 px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-lg backdrop-blur-xs max-w-[170px] sm:max-w-xs pointer-events-none">
             <div className="flex items-center gap-1.5 sm:gap-2">
               <span className="text-[10px] sm:text-[11px] font-mono text-slate-400">PARRY:</span>
               {isParryReady ? (
@@ -311,16 +327,37 @@ export const GameHUD: React.FC<GameHUDProps> = ({
                 </span>
               </div>
             )}
+
+            {/* Movement hint for smartphones */}
+            <div className="flex items-center gap-1 text-[9px] sm:text-[10px] font-mono text-cyan-300/85 pt-0.5 border-t border-slate-800/70">
+              <span>🕹️</span>
+              <span>{controlMode === 'JOYSTICK' ? '画面左ドラッグで360°移動' : 'ドラッグでスリング発射'}</span>
+            </div>
           </div>
 
-          {/* On-screen Instant Touch PARRY button for Mobile/Tablet */}
-          <div className="pointer-events-auto">
+          {/* On-screen Touch DASH & PARRY buttons for Mobile/Tablet */}
+          <div className="flex flex-col gap-1.5 sm:gap-2 items-center pointer-events-auto">
+            {onDashPress && (
+              <button
+                onPointerDown={(e) => {
+                  e.preventDefault();
+                  onDashPress();
+                }}
+                className="flex items-center justify-center gap-1 w-18 h-9 sm:w-22 sm:h-10 rounded-xl bg-gradient-to-r from-sky-600 to-indigo-600 hover:from-sky-500 hover:to-indigo-500 text-white font-bold text-[11px] sm:text-xs tracking-wider shadow-[0_0_15px_rgba(56,189,248,0.4)] active:scale-90 transition-transform cursor-pointer border border-sky-300/40 select-none touch-none"
+                aria-label="Dash"
+              >
+                <span className="text-sm">🚀</span>
+                <span>DASH</span>
+              </button>
+            )}
+
             <button
               onPointerDown={(e) => {
                 e.preventDefault();
                 onParryPress();
               }}
               className="flex flex-col items-center justify-center w-18 h-18 sm:w-22 sm:h-22 rounded-2xl bg-gradient-to-br from-cyan-500 to-blue-600 text-white font-black text-xs sm:text-sm tracking-widest shadow-[0_0_25px_rgba(56,189,248,0.6)] active:scale-90 active:from-cyan-400 active:to-blue-500 transition-transform cursor-pointer border border-cyan-300/40 select-none touch-none"
+              aria-label="Parry"
             >
               <span className="text-xl sm:text-2xl">⚡</span>
               <span>PARRY</span>

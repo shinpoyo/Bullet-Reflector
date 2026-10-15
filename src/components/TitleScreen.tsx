@@ -193,9 +193,9 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({ onStart, highScore }) 
 
         {/* Platform-adaptive Control Hint */}
         <div className="mt-2.5 flex items-center justify-center gap-2 text-[10px] sm:text-xs font-mono text-slate-400">
-          <span className="sm:hidden text-cyan-300 font-semibold">👆 スワイプでスリング移動 · ⚡ PARRYボタンで弾反射</span>
+          <span className="sm:hidden text-cyan-300 font-semibold">🕹️ 画面左ドラッグで360°移動 · 🚀 DASH · ⚡ PARRY</span>
           <span className="hidden sm:inline">
-            Press <strong className="text-cyan-300">Space</strong> / <strong className="text-cyan-300">Enter</strong> to start · <strong className="text-slate-200">WASD</strong> Move · <strong className="text-slate-200">Space / R-Click</strong> Parry
+            Press <strong className="text-cyan-300">Space</strong> / <strong className="text-cyan-300">Enter</strong> to start · <strong className="text-slate-200">WASD</strong> Move · <strong className="text-slate-200">Shift</strong> Dash · <strong className="text-slate-200">Space / R-Click</strong> Parry
           </span>
         </div>
 

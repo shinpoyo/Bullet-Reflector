@@ -507,6 +507,12 @@ export function updateGameSimulation(
                 // Deal massive direct critical damage to destroy it or leave it crippled
                 enemy.hp -= Math.max(b.damage, 105);
                 enemy.hitFlashTimer = 0.35;
+                soundManager.playEnemyHit({
+                  isCritical: true,
+                  isBank: b.wallBounces > 0,
+                  mass: enemy.mass,
+                  enemyType: enemy.type,
+                });
               } else {
                 const impactAngle = Math.atan2(b.y - enemy.y, b.x - enemy.x);
                 let angleDiff = Math.abs(impactAngle - enemy.shieldAngle);
@@ -612,6 +618,12 @@ export function updateGameSimulation(
               enemy.hitFlashTimer = 0.15;
               enemy.vx += b.vx * 0.15;
               enemy.vy += b.vy * 0.15;
+              soundManager.playEnemyHit({
+                isCritical: b.parryRating === 'PERFECT',
+                isBank: isBankShot,
+                mass: enemy.mass,
+                enemyType: enemy.type,
+              });
 
               // Cluster Blast skill
               if (player.explosiveLevel > 0) {
@@ -632,6 +644,12 @@ export function updateGameSimulation(
                   if (vecDist({ x: enemy.x, y: enemy.y }, { x: other.x, y: other.y }) < 90) {
                     other.hp -= splashDmg;
                     other.hitFlashTimer = 0.15;
+                    soundManager.playEnemyHit({
+                      isCritical: false,
+                      isBank: false,
+                      mass: other.mass,
+                      enemyType: other.type,
+                    });
                   }
                 }
               }
@@ -769,7 +787,12 @@ export function updateGameSimulation(
           e.hp -= tackleDamage;
           e.hitFlashTimer = 0.15;
           e.isKnockedByPlayer = true;
-          soundManager.playEnemyExplosion(1.2);
+          soundManager.playEnemyHit({
+            isCritical: pSpeed > 350,
+            isBank: false,
+            mass: e.mass,
+            enemyType: e.type,
+          });
           triggerScreenShake(6);
 
           floatingTexts.push({
@@ -872,7 +895,11 @@ export function updateGameSimulation(
             e2.hp -= crashDamage;
             e.hitFlashTimer = 0.15;
             e2.hitFlashTimer = 0.15;
-            soundManager.playWallBounce();
+            soundManager.playEnemyHit({
+              isCritical: relativeSpeed > 280,
+              isBank: e.wallBounces > 0 || e2.wallBounces > 0,
+              mass: (e.mass + e2.mass) / 2,
+            });
           }
 
           const overlap = minDist - dist;
