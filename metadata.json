@@ -1,0 +1,6 @@
+{
+  "name": "Bullet Reflector",
+  "description": "High-speed ricochet & just-parry bullet hell action game with 60fps billiards physics and Web Audio synthesis.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
