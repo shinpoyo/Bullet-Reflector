@@ -1,22 +1,27 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { Bullet, Enemy, FloatingText, GameStats, Particle, Player, RaycastSegment, Shockwave, Vector2D, WallFlash } from '../types/game';
+import { Bullet, Enemy, ExpGem, FloatingText, GameStats, LightningBolt, Particle, Player, RaycastSegment, Shockwave, Vector2D, WallFlash } from '../types/game';
 import { calculateSlingTrajectory, clamp, updateGameSimulation, vecLen, vecNorm, vecScale } from '../game/physics';
 import { renderGameScene } from '../game/renderer';
-import { spawnWaveEnemies } from '../game/waveManager';
+import { getWaveArenaScale, spawnWaveEnemies } from '../game/waveManager';
 import { soundManager } from '../audio/soundManager';
+import { applySkillToPlayer } from '../game/skills';
 
 interface GameCanvasProps {
   onGameOver: (stats: GameStats, isVictory: boolean) => void;
   onUpdateStats: (stats: GameStats, player: Player) => void;
+  onTriggerLevelUp: () => void;
   isPaused: boolean;
   onRequestParryRef?: React.MutableRefObject<(() => void) | null>;
+  onApplySkillRef?: React.MutableRefObject<((skillId: any) => void) | null>;
 }
 
 export const GameCanvas: React.FC<GameCanvasProps> = ({
   onGameOver,
   onUpdateStats,
+  onTriggerLevelUp,
   isPaused,
   onRequestParryRef,
+  onApplySkillRef,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -32,6 +37,8 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     player: Player;
     bullets: Bullet[];
     enemies: Enemy[];
+    expGems: ExpGem[];
+    lightningBolts: LightningBolt[];
     particles: Particle[];
     shockwaves: Shockwave[];
     floatingTexts: FloatingText[];
@@ -43,8 +50,12 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     hitStopMs: number;
     lastTime: number;
     waveTransitionTimer: number;
+    baseWidth: number;
+    baseHeight: number;
     arenaWidth: number;
     arenaHeight: number;
+    cameraZoom: number;
+    targetCameraZoom: number;
     isAimingDrag: boolean;
     dragStartPos: Vector2D;
   }>({
@@ -54,8 +65,8 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
       vx: 0,
       vy: 0,
       radius: 16,
-      hp: 5,
-      maxHp: 5,
+      hp: 100,
+      maxHp: 100,
       invulnerableTimer: 0,
       parryCooldownTimer: 0,
       parryBufferTimer: 0,
@@ -67,9 +78,32 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
       slingStart: { x: 400, y: 300 },
       slingCurrent: { x: 400, y: 300 },
       aimAngle: 0,
+      level: 1,
+      exp: 0,
+      expToNext: 25,
+      magnetRadius: 110,
+      skills: {
+        MULTI_MIRROR: 0,
+        MAGNET_CORE: 0,
+        PARRY_WINDOW: 0,
+        EXPLOSIVE_RICOCHET: 0,
+        TESLA_DISCHARGE: 0,
+        CORE_REINFORCE: 0,
+        TACKLE_BOOST: 0,
+        TRICKSHOT_MASTER: 0,
+      },
+      parryWindowMultiplier: 1.0,
+      multiMirrorLevel: 0,
+      explosiveLevel: 0,
+      teslaLevel: 0,
+      teslaTimer: 0,
+      tackleMultiplier: 1.0,
+      bankMultiplier: 2.0,
     },
     bullets: [],
     enemies: [],
+    expGems: [],
+    lightningBolts: [],
     particles: [],
     shockwaves: [],
     floatingTexts: [],
@@ -93,8 +127,12 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     hitStopMs: 0,
     lastTime: performance.now(),
     waveTransitionTimer: 0,
+    baseWidth: 800,
+    baseHeight: 600,
     arenaWidth: 800,
     arenaHeight: 600,
+    cameraZoom: 1.0,
+    targetCameraZoom: 1.0,
     isAimingDrag: false,
     dragStartPos: { x: 0, y: 0 },
   });
@@ -131,6 +169,16 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     }
   }, [triggerParry, onRequestParryRef]);
 
+  useEffect(() => {
+    if (onApplySkillRef) {
+      onApplySkillRef.current = (skillId: any) => {
+        const state = gameStateRef.current;
+        applySkillToPlayer(state.player, skillId);
+        onUpdateStats({ ...state.stats }, { ...state.player });
+      };
+    }
+  }, [onApplySkillRef, onUpdateStats]);
+
   // Handle Resize and Canvas setup
   useEffect(() => {
     const handleResize = () => {
@@ -152,13 +200,20 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
       }
 
       const state = gameStateRef.current;
-      state.arenaWidth = w;
-      state.arenaHeight = h;
+      state.baseWidth = w;
+      state.baseHeight = h;
 
-      // Center player if at initial spawn
+      const scale = getWaveArenaScale(state.stats.wave);
+      state.arenaWidth = Math.round(w * scale);
+      state.arenaHeight = Math.round(h * scale);
+      state.targetCameraZoom = 1.0 / scale;
+      if (state.cameraZoom === 1.0 && scale === 1.0) {
+        state.cameraZoom = 1.0;
+      }
+
       if (state.player.x === 400 && state.player.y === 300) {
-        state.player.x = w / 2;
-        state.player.y = h * 0.7;
+        state.player.x = state.arenaWidth / 2;
+        state.player.y = state.arenaHeight * 0.7;
       }
     };
 
@@ -188,21 +243,28 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
         return;
       }
 
+      // Smooth camera zoom transition
+      state.cameraZoom += (state.targetCameraZoom - state.cameraZoom) * Math.min(1, rawDt * 3.0);
+
       // Check Hit-Stop (Micro-freeze on PERFECT parry for heavy game feel)
       if (state.hitStopMs > 0) {
         state.hitStopMs -= rawDt * 1000;
-        // Still render current state and aim pointer
         const canvas = canvasRef.current;
         if (canvas) {
           const ctx = canvas.getContext('2d');
           if (ctx) {
             renderGameScene({
               ctx,
-              width: state.arenaWidth,
-              height: state.arenaHeight,
+              width: state.baseWidth,
+              height: state.baseHeight,
+              arenaWidth: state.arenaWidth,
+              arenaHeight: state.arenaHeight,
+              cameraZoom: state.cameraZoom,
               player: state.player,
               bullets: state.bullets,
               enemies: state.enemies,
+              expGems: state.expGems,
+              lightningBolts: state.lightningBolts,
               particles: state.particles,
               shockwaves: state.shockwaves,
               floatingTexts: state.floatingTexts,
@@ -240,7 +302,6 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
       // Calculate Sling Trajectory if aiming
       let trajectorySegments: RaycastSegment[] = [];
       if (state.player.isAimingSling) {
-        // Drag vector: player pulls back, or points towards cursor
         const pullVector = {
           x: state.player.x - state.player.slingCurrent.x,
           y: state.player.y - state.player.slingCurrent.y,
@@ -260,10 +321,17 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
       }
 
       // Update Simulation with 4-substep physics
-      const { bullets: nextBullets, enemies: nextEnemies } = updateGameSimulation(
+      const {
+        bullets: nextBullets,
+        enemies: nextEnemies,
+        expGems: nextGems,
+        lightningBolts: nextLightning,
+      } = updateGameSimulation(
         state.player,
         state.bullets,
         state.enemies,
+        state.expGems,
+        state.lightningBolts,
         state.particles,
         state.shockwaves,
         state.floatingTexts,
@@ -278,11 +346,14 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
         },
         (ms) => {
           state.hitStopMs = ms;
-        }
+        },
+        onTriggerLevelUp
       );
 
       state.bullets = nextBullets;
       state.enemies = nextEnemies;
+      state.expGems = nextGems;
+      state.lightningBolts = nextLightning;
 
       // Check Wave Completion
       if (state.enemies.length === 0) {
@@ -291,22 +362,30 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
           state.waveTransitionTimer = 0;
           state.stats.wave += 1;
           state.stats.maxWave = Math.max(state.stats.maxWave, state.stats.wave);
-          // Restore 1 HP on wave clear
-          state.player.hp = Math.min(state.player.maxHp, state.player.hp + 1);
+
+          // Restore +25 numerical HP on wave clear!
+          state.player.hp = Math.min(state.player.maxHp, state.player.hp + 25);
+
+          // Check Arena Scaling (Stage widens from Wave 3+)
+          const newScale = getWaveArenaScale(state.stats.wave);
+          state.arenaWidth = Math.round(state.baseWidth * newScale);
+          state.arenaHeight = Math.round(state.baseHeight * newScale);
+          state.targetCameraZoom = 1.0 / newScale;
 
           soundManager.playBankShotFanfare();
+          const isExpanded = newScale > 1.0;
           state.floatingTexts.push({
             id: Math.random(),
             x: state.arenaWidth / 2,
             y: state.arenaHeight / 2 - 30,
             text: `WAVE ${state.stats.wave} INCOMING!`,
-            subtext: '+1 HP RESTORED',
+            subtext: isExpanded ? `+25 HP · ARENA EXPANDED (${Math.round(newScale * 100)}%)` : '+25 HP RESTORED',
             color: '#38BDF8',
             alpha: 1,
             scale: 1.5,
             vy: -30,
             life: 0,
-            maxLife: 1.2,
+            maxLife: 1.4,
           });
 
           state.enemies = spawnWaveEnemies(state.stats.wave, state.arenaWidth, state.arenaHeight);
@@ -330,11 +409,16 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
         if (ctx) {
           renderGameScene({
             ctx,
-            width: state.arenaWidth,
-            height: state.arenaHeight,
+            width: state.baseWidth,
+            height: state.baseHeight,
+            arenaWidth: state.arenaWidth,
+            arenaHeight: state.arenaHeight,
+            cameraZoom: state.cameraZoom,
             player: state.player,
             bullets: state.bullets,
             enemies: state.enemies,
+            expGems: state.expGems,
+            lightningBolts: state.lightningBolts,
             particles: state.particles,
             shockwaves: state.shockwaves,
             floatingTexts: state.floatingTexts,
@@ -343,17 +427,17 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
             mousePos: state.mousePos,
             screenShake: state.screenShake,
             time: currentTime / 1000,
+            stats: state.stats,
           });
         }
       }
 
-      // Sync stats to UI periodically (every ~4 frames)
       onUpdateStats({ ...state.stats }, { ...state.player });
     };
 
     animationFrameId = requestAnimationFrame(gameLoop);
     return () => cancelAnimationFrame(animationFrameId);
-  }, [isPaused, onGameOver, onUpdateStats, highScore]);
+  }, [isPaused, onGameOver, onUpdateStats, onTriggerLevelUp, highScore]);
 
   // Input Listeners: Keyboard & Mouse & Touch
   useEffect(() => {
@@ -363,6 +447,10 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
       if (e.code === 'Space' || e.code === 'KeyZ' || e.code === 'ShiftLeft' || e.code === 'ShiftRight') {
         e.preventDefault();
         triggerParry();
+        return;
+      }
+      if (e.code === 'KeyR' || e.code === 'Escape') {
+        return;
       }
       state.heldKeys.add(e.code);
     };
@@ -387,16 +475,27 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     };
   }, [triggerParry]);
 
-  // Pointer / Touch Handlers for Sling-shot Aiming and Deflect Aiming
-  const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
+  // Converts canvas screen coordinates to world arena coordinates accounting for camera zoom
+  const screenToWorld = useCallback((clientX: number, clientY: number): Vector2D => {
     const canvas = canvasRef.current;
-    if (!canvas) return;
+    if (!canvas) return { x: clientX, y: clientY };
     const rect = canvas.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
+    const screenX = clientX - rect.left;
+    const screenY = clientY - rect.top;
 
     const state = gameStateRef.current;
-    state.mousePos = { x, y };
+    const zoom = state.cameraZoom || 1.0;
+    const worldX = (screenX - state.baseWidth / 2) / zoom + state.arenaWidth / 2;
+    const worldY = (screenY - state.baseHeight / 2) / zoom + state.arenaHeight / 2;
+
+    return { x: worldX, y: worldY };
+  }, []);
+
+  // Pointer / Touch Handlers for Sling-shot Aiming and Deflect Aiming
+  const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    const worldPos = screenToWorld(e.clientX, e.clientY);
+    const state = gameStateRef.current;
+    state.mousePos = worldPos;
 
     // Right-click is parry!
     if (e.button === 2) {
@@ -406,28 +505,23 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
 
     // Left click / touch drag: start sling aim!
     state.isAimingDrag = true;
-    state.dragStartPos = { x, y };
+    state.dragStartPos = worldPos;
     state.player.isAimingSling = true;
     state.player.slingStart = { x: state.player.x, y: state.player.y };
-    state.player.slingCurrent = { x, y };
+    state.player.slingCurrent = worldPos;
   };
 
   const handlePointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const rect = canvas.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-
+    const worldPos = screenToWorld(e.clientX, e.clientY);
     const state = gameStateRef.current;
-    state.mousePos = { x, y };
+    state.mousePos = worldPos;
 
     if (state.isAimingDrag && state.player.isAimingSling) {
-      state.player.slingCurrent = { x, y };
+      state.player.slingCurrent = worldPos;
     }
   };
 
-  const handlePointerUp = (e: React.PointerEvent<HTMLCanvasElement>) => {
+  const handlePointerUp = () => {
     const state = gameStateRef.current;
     if (state.isAimingDrag && state.player.isAimingSling) {
       const pullVector = {

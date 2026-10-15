@@ -15,8 +15,8 @@ export const PauseModal: React.FC<PauseModalProps> = ({
   onToggleMute,
 }) => {
   return (
-    <div className="absolute inset-0 z-30 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm select-none">
-      <div className="w-full max-w-sm bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-2xl flex flex-col items-center text-center">
+    <div className="fixed inset-0 z-30 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm select-none">
+      <div className="w-full max-w-sm bg-slate-900 border border-slate-800 rounded-2xl p-5 sm:p-6 shadow-2xl flex flex-col items-center text-center max-h-[96dvh]">
         <h2 className="text-xl font-bold font-mono tracking-wider text-slate-100 mb-1">
           TACTICAL PAUSE
         </h2>

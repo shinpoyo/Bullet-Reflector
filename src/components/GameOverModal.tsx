@@ -16,11 +16,11 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
   const isNewHigh = stats.score >= stats.highScore && stats.score > 0;
 
   return (
-    <div className="absolute inset-0 z-30 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md select-none">
-      <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-2xl p-6 md:p-8 shadow-2xl flex flex-col items-center text-center">
+    <div className="fixed inset-0 z-30 flex items-center justify-center p-3 sm:p-4 bg-slate-950/85 backdrop-blur-md select-none">
+      <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-2xl p-4 sm:p-6 md:p-8 shadow-2xl flex flex-col items-center text-center max-h-[96dvh]">
         {/* Title status */}
-        <div className="mb-4">
-          <span className={`text-xs font-mono font-bold tracking-widest uppercase ${isVictory ? 'text-cyan-400' : 'text-rose-400'}`}>
+        <div className="mb-2 sm:mb-4">
+          <span className={`text-[10px] sm:text-xs font-mono font-bold tracking-widest uppercase ${isVictory ? 'text-cyan-400' : 'text-rose-400'}`}>
             {isVictory ? 'SECTOR SECURED' : 'CORE CRITICAL COLLAPSE'}
           </span>
           <h2 className="text-2xl sm:text-3xl font-black font-mono tracking-wider text-slate-100 mt-1">
@@ -54,8 +54,10 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
             <strong className="font-mono text-slate-200 tabular-nums">WAVE {stats.wave}</strong>
           </div>
           <div className="p-2.5 rounded-lg bg-slate-800/60 border border-slate-800 flex items-center justify-between">
-            <span className="text-slate-400">Max Chain:</span>
-            <strong className="font-mono text-amber-400 tabular-nums">{stats.maxChain}x</strong>
+            <span className="text-slate-400">Peak Combo:</span>
+            <strong className="font-mono text-amber-400 tabular-nums">
+              {Math.floor(stats.maxChain)} <span className="text-cyan-300 font-bold">(x{(1 + stats.maxChain * 0.2).toFixed(1)})</span>
+            </strong>
           </div>
           <div className="p-2.5 rounded-lg bg-slate-800/60 border border-slate-800 flex items-center justify-between">
             <span className="text-slate-400">⚡ Perfects:</span>
@@ -77,7 +79,7 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
         </button>
 
         <p className="mt-3 text-[11px] font-mono text-slate-500">
-          Press <strong className="text-slate-300">Space</strong> or <strong className="text-slate-300">Enter</strong> to restart
+          Press <strong className="text-slate-300">Space</strong>, <strong className="text-slate-300">Enter</strong>, or <strong className="text-slate-300">R</strong> to restart
         </p>
       </div>
     </div>

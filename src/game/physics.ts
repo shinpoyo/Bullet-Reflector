@@ -1,4 +1,4 @@
-import { Bullet, Enemy, FloatingText, GameStats, Particle, Player, RaycastSegment, Shockwave, Vector2D, WallFlash } from '../types/game';
+import { Bullet, Enemy, ExpGem, FloatingText, GameStats, LightningBolt, Particle, Player, RaycastSegment, Shockwave, Vector2D, WallFlash } from '../types/game';
 import { soundManager } from '../audio/soundManager';
 
 // Math utility helpers
@@ -31,6 +31,97 @@ export const reflectVector = (v: Vector2D, normal: Vector2D): Vector2D => {
 export const clamp = (val: number, min: number, max: number): number => Math.max(min, Math.min(max, val));
 
 /**
+ * Triggers feedback, audio surge, floating banners, and shockwaves when combo chain crosses milestones
+ */
+export function checkChainMilestone(
+  prevChain: number,
+  newChain: number,
+  player: Player,
+  floatingTexts: FloatingText[],
+  shockwaves: Shockwave[]
+) {
+  if (prevChain <= 5 && newChain > 5) {
+    soundManager.playComboSurge(1);
+    const mult = (1 + newChain * 0.2).toFixed(1);
+    floatingTexts.push({
+      id: Math.random(),
+      x: player.x,
+      y: player.y - 45,
+      text: `🔥 5+ COMBO! x${mult} SCORE MULTIPLIER! 🔥`,
+      subtext: 'SCORE SURGE ACTIVE',
+      color: '#F59E0B',
+      alpha: 1,
+      scale: 1.5,
+      vy: -35,
+      life: 0,
+      maxLife: 1.3,
+    });
+    shockwaves.push({
+      x: player.x,
+      y: player.y,
+      radius: 15,
+      maxRadius: 110,
+      alpha: 0.9,
+      color: '#F59E0B',
+      lineWidth: 4,
+      expansionSpeed: 420,
+    });
+  } else if (prevChain < 10 && newChain >= 10) {
+    soundManager.playComboSurge(2);
+    const mult = (1 + newChain * 0.2).toFixed(1);
+    floatingTexts.push({
+      id: Math.random(),
+      x: player.x,
+      y: player.y - 45,
+      text: `⚡ 10+ COMBO! x${mult} HYPER MULTIPLIER! ⚡`,
+      subtext: 'HYPER DRIVE ACTIVE',
+      color: '#E879F9',
+      alpha: 1,
+      scale: 1.6,
+      vy: -35,
+      life: 0,
+      maxLife: 1.3,
+    });
+    shockwaves.push({
+      x: player.x,
+      y: player.y,
+      radius: 15,
+      maxRadius: 130,
+      alpha: 0.9,
+      color: '#E879F9',
+      lineWidth: 4,
+      expansionSpeed: 460,
+    });
+  } else if (prevChain < 15 && newChain >= 15) {
+    soundManager.playComboSurge(3);
+    const mult = (1 + newChain * 0.2).toFixed(1);
+    floatingTexts.push({
+      id: Math.random(),
+      x: player.x,
+      y: player.y - 45,
+      text: `🌟 15+ COMBO! x${mult} GODLIKE MULTIPLIER! 🌟`,
+      subtext: 'MAX OVERDRIVE ACTIVE',
+      color: '#38BDF8',
+      alpha: 1,
+      scale: 1.7,
+      vy: -35,
+      life: 0,
+      maxLife: 1.4,
+    });
+    shockwaves.push({
+      x: player.x,
+      y: player.y,
+      radius: 15,
+      maxRadius: 160,
+      alpha: 1,
+      color: '#38BDF8',
+      lineWidth: 5,
+      expansionSpeed: 500,
+    });
+  }
+}
+
+/**
  * 2-Bounce Raycasting trajectory calculator for Sling-shot Aiming
  */
 export function calculateSlingTrajectory(
@@ -54,7 +145,7 @@ export function calculateSlingTrajectory(
     let hitIsEnemy = false;
     let hitEnemy: Enemy | null = null;
 
-    // Left wall (x = playerRadius)
+    // Left wall
     if (currentDir.x < -0.0001) {
       const t = (playerRadius - currentPos.x) / currentDir.x;
       if (t > 0.1 && t < minT) {
@@ -63,7 +154,7 @@ export function calculateSlingTrajectory(
         hitIsWall = true;
       }
     }
-    // Right wall (x = arenaWidth - playerRadius)
+    // Right wall
     if (currentDir.x > 0.0001) {
       const t = (arenaWidth - playerRadius - currentPos.x) / currentDir.x;
       if (t > 0.1 && t < minT) {
@@ -72,7 +163,7 @@ export function calculateSlingTrajectory(
         hitIsWall = true;
       }
     }
-    // Top wall (y = playerRadius)
+    // Top wall
     if (currentDir.y < -0.0001) {
       const t = (playerRadius - currentPos.y) / currentDir.y;
       if (t > 0.1 && t < minT) {
@@ -81,7 +172,7 @@ export function calculateSlingTrajectory(
         hitIsWall = true;
       }
     }
-    // Bottom wall (y = arenaHeight - playerRadius)
+    // Bottom wall
     if (currentDir.y > 0.0001) {
       const t = (arenaHeight - playerRadius - currentPos.y) / currentDir.y;
       if (t > 0.1 && t < minT) {
@@ -91,7 +182,7 @@ export function calculateSlingTrajectory(
       }
     }
 
-    // 2. Raycast vs Enemies (Circle-ray intersection)
+    // 2. Raycast vs Enemies
     for (const enemy of enemies) {
       const combinedRadius = playerRadius + enemy.radius;
       const m = vecSub(currentPos, { x: enemy.x, y: enemy.y });
@@ -114,7 +205,6 @@ export function calculateSlingTrajectory(
     }
 
     if (!isFinite(minT) || minT > 1500) {
-      // Clamp to max distance
       const endPoint = vecAdd(currentPos, vecScale(currentDir, 600));
       segments.push({
         startX: currentPos.x,
@@ -138,17 +228,13 @@ export function calculateSlingTrajectory(
         isWallHit: true,
         isEnemyHit: false,
       });
-      // Reflect
       currentPos = hitPoint;
       currentDir = reflectVector(currentDir, hitNormal);
     } else if (hitIsEnemy && hitEnemy) {
-      // Billiard contact resolution
       const normal = vecNorm(vecSub({ x: hitEnemy.x, y: hitEnemy.y }, hitPoint));
       const tangent = { x: -normal.y, y: normal.x };
 
-      // Knockback vector for enemy
       const enemyKnockback = vecScale(normal, 120);
-      // Deflection vector for player
       const deflection = vecScale(tangent, vecDot(currentDir, tangent) * 80);
 
       segments.push({
@@ -162,7 +248,7 @@ export function calculateSlingTrajectory(
         enemyKnockbackVector: enemyKnockback,
         deflectionVector: deflection,
       });
-      break; // Stop after hitting an enemy
+      break;
     }
   }
 
@@ -176,6 +262,8 @@ export function updateGameSimulation(
   player: Player,
   bullets: Bullet[],
   enemies: Enemy[],
+  expGems: ExpGem[],
+  lightningBolts: LightningBolt[],
   particles: Particle[],
   shockwaves: Shockwave[],
   floatingTexts: FloatingText[],
@@ -186,8 +274,9 @@ export function updateGameSimulation(
   mousePos: Vector2D,
   rawDt: number,
   triggerScreenShake: (intensity: number) => void,
-  triggerHitStop: (durationMs: number) => void
-): { bullets: Bullet[]; enemies: Enemy[] } {
+  triggerHitStop: (durationMs: number) => void,
+  onLevelUp: () => void
+): { bullets: Bullet[]; enemies: Enemy[]; expGems: ExpGem[]; lightningBolts: LightningBolt[] } {
   const isAiming = player.isAimingSling;
   const timeDilation = isAiming ? 0.25 : 1.0;
   const dt = Math.min(rawDt, 0.05) * timeDilation;
@@ -201,7 +290,6 @@ export function updateGameSimulation(
   if (player.parryBufferTimer > 0) {
     player.parryBufferTimer = Math.max(0, player.parryBufferTimer - rawDt);
     if (player.parryCooldownTimer <= 0 && player.parryBufferTimer > 0) {
-      // Auto-trigger buffered parry
       player.parryBufferTimer = 0;
       attemptParry(player, bullets, enemies, shockwaves, floatingTexts, stats, mousePos, triggerScreenShake, triggerHitStop);
     }
@@ -218,12 +306,94 @@ export function updateGameSimulation(
     player.invulnerableTimer = Math.max(0, player.invulnerableTimer - rawDt);
   }
 
+  // Tesla Discharge Skill - Generates visible electric lightning bolts!
+  if (player.teslaLevel > 0) {
+    player.teslaTimer += dt;
+    const teslaInterval = Math.max(1.0, 3.0 - player.teslaLevel * 0.6);
+    if (player.teslaTimer >= teslaInterval) {
+      player.teslaTimer = 0;
+      let nearestEn: Enemy | null = null;
+      let minDist = 380;
+      for (const en of enemies) {
+        if (en.hp <= 0) continue;
+        const d = vecDist({ x: player.x, y: player.y }, { x: en.x, y: en.y });
+        if (d < minDist) {
+          minDist = d;
+          nearestEn = en;
+        }
+      }
+      if (nearestEn) {
+        const teslaDmg = Math.round(25 * player.teslaLevel);
+        nearestEn.hp -= teslaDmg;
+        nearestEn.hitFlashTimer = 0.2;
+        soundManager.playTeslaZap();
+
+        // Generate jagged electric lightning path
+        const p1 = { x: player.x, y: player.y };
+        const p2 = { x: nearestEn.x, y: nearestEn.y };
+        const points: Vector2D[] = [p1];
+        const numSteps = 6;
+        const dist = vecDist(p1, p2);
+        const dir = vecNorm(vecSub(p2, p1));
+        const perp = { x: -dir.y, y: dir.x };
+
+        for (let s = 1; s < numSteps; s++) {
+          const t = s / numSteps;
+          const baseX = p1.x + (p2.x - p1.x) * t;
+          const baseY = p1.y + (p2.y - p1.y) * t;
+          const jitter = (Math.random() - 0.5) * Math.min(dist * 0.25, 32);
+          points.push({
+            x: baseX + perp.x * jitter,
+            y: baseY + perp.y * jitter,
+          });
+        }
+        points.push(p2);
+
+        lightningBolts.push({
+          id: Math.random(),
+          startX: p1.x,
+          startY: p1.y,
+          endX: p2.x,
+          endY: p2.y,
+          points,
+          alpha: 1,
+          color: '#38BDF8',
+          lifeTime: 0,
+          maxLife: 0.18,
+        });
+
+        shockwaves.push({
+          x: nearestEn.x,
+          y: nearestEn.y,
+          radius: 8,
+          maxRadius: 40,
+          alpha: 1,
+          color: '#38BDF8',
+          lineWidth: 3,
+          expansionSpeed: 250,
+        });
+        createImpactSparks(particles, nearestEn.x, nearestEn.y, '#38BDF8', 12);
+        floatingTexts.push({
+          id: Math.random(),
+          x: nearestEn.x,
+          y: nearestEn.y - 25,
+          text: `⚡ TESLA ${teslaDmg}`,
+          color: '#38BDF8',
+          alpha: 1,
+          scale: 1.1,
+          vy: -35,
+          life: 0,
+          maxLife: 0.6,
+        });
+      }
+    }
+  }
+
   // 4-Substep Loop for Physics & Continuous Collision Detection
   for (let step = 0; step < subSteps; step++) {
     // 1. Move Player
     player.x += player.vx * subDt;
     player.y += player.vy * subDt;
-    // Friction
     player.vx *= Math.pow(0.85, subDt * 60);
     player.vy *= Math.pow(0.85, subDt * 60);
 
@@ -258,7 +428,6 @@ export function updateGameSimulation(
       b.y += b.vy * subDt;
       b.lifeTime += subDt;
 
-      // Trail recording
       if (b.lifeTime > 0.02) {
         b.trail.push({ x: b.x, y: b.y });
         if (b.trail.length > 8) b.trail.shift();
@@ -301,41 +470,75 @@ export function updateGameSimulation(
         for (const enemy of enemies) {
           const dist = vecDist({ x: b.x, y: b.y }, { x: enemy.x, y: enemy.y });
           if (dist < b.radius + enemy.radius) {
-            // Check Ricochet Prism frontal shield!
             let blockedByShield = false;
-            if (enemy.type === 'RICOCHET_PRISM' && enemy.shieldAngle !== undefined && enemy.shieldArc !== undefined) {
-              const impactAngle = Math.atan2(b.y - enemy.y, b.x - enemy.x);
-              let angleDiff = Math.abs(impactAngle - enemy.shieldAngle);
-              while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
-              angleDiff = Math.abs(angleDiff);
+            if (enemy.type === 'RICOCHET_PRISM' && enemy.shieldAngle !== undefined && enemy.shieldArc !== undefined && enemy.shieldArc > 0) {
+              const isPerfectParry = b.parryRating === 'PERFECT';
 
-              if (angleDiff < enemy.shieldArc / 2 && b.wallBounces === 0) {
-                // Blocked by front shield!
-                blockedByShield = true;
-                soundManager.playWallBounce();
+              if (isPerfectParry) {
+                // PERFECT PARRY SHATTERS & OBLITERATES FRONT SHIELD!
+                enemy.shieldArc = 0; // Shield permanently broken for this enemy!
+                soundManager.playEnemyExplosion(2.5);
+                triggerScreenShake(14);
+                createExplosionSparks(particles, enemy.x, enemy.y, '#FDE047', 24);
+                createExplosionSparks(particles, enemy.x, enemy.y, '#C084FC', 24);
+                shockwaves.push({
+                  x: enemy.x,
+                  y: enemy.y,
+                  radius: 10,
+                  maxRadius: 110,
+                  alpha: 1,
+                  color: '#FDE047',
+                  lineWidth: 5,
+                  expansionSpeed: 480,
+                });
                 floatingTexts.push({
                   id: Math.random(),
                   x: enemy.x,
-                  y: enemy.y - 20,
-                  text: 'BLOCKED!',
-                  subtext: 'Flank or Bank Shot!',
-                  color: '#9333EA',
+                  y: enemy.y - 35,
+                  text: '💥 SHIELD SHATTERED!!',
+                  subtext: 'PERFECT OBLITERATION',
+                  color: '#FDE047',
                   alpha: 1,
-                  scale: 1,
-                  vy: -40,
+                  scale: 1.4,
+                  vy: -45,
                   life: 0,
-                  maxLife: 0.8,
+                  maxLife: 1.0,
                 });
-                b.vx = -b.vx * 0.8;
-                b.vy = -b.vy * 0.8;
-                createImpactSparks(particles, b.x, b.y, '#C084FC', 8);
+                // Deal massive direct critical damage to destroy it or leave it crippled
+                enemy.hp -= Math.max(b.damage, 105);
+                enemy.hitFlashTimer = 0.35;
+              } else {
+                const impactAngle = Math.atan2(b.y - enemy.y, b.x - enemy.x);
+                let angleDiff = Math.abs(impactAngle - enemy.shieldAngle);
+                while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
+                angleDiff = Math.abs(angleDiff);
+
+                if (angleDiff < enemy.shieldArc / 2 && b.wallBounces === 0) {
+                  blockedByShield = true;
+                  soundManager.playWallBounce();
+                  floatingTexts.push({
+                    id: Math.random(),
+                    x: enemy.x,
+                    y: enemy.y - 20,
+                    text: 'BLOCKED!',
+                    subtext: 'Flank, Bank Shot, or PERFECT to shatter!',
+                    color: '#9333EA',
+                    alpha: 1,
+                    scale: 1,
+                    vy: -35,
+                    life: 0,
+                    maxLife: 0.8,
+                  });
+                  b.vx = -b.vx * 0.8;
+                  b.vy = -b.vy * 0.8;
+                  createImpactSparks(particles, b.x, b.y, '#C084FC', 8);
+                }
               }
             }
 
             if (!blockedByShield) {
               // Boss rally check for Mega Core
               if (b.isBossCore && enemy.type === 'GRAVITY_CORE') {
-                // Table tennis boss rally counter-hit!
                 b.rallyCount = (b.rallyCount || 0) + 1;
                 soundManager.playBossRally(b.rallyCount);
                 triggerScreenShake(8);
@@ -355,7 +558,6 @@ export function updateGameSimulation(
                 });
 
                 if (b.rallyCount >= 3) {
-                  // Boss overloaded! Massive detonation!
                   enemy.hp -= 260;
                   enemy.hitFlashTimer = 0.3;
                   soundManager.playEnemyExplosion(4);
@@ -371,10 +573,8 @@ export function updateGameSimulation(
                     expansionSpeed: 500,
                   });
                   createExplosionSparks(particles, enemy.x, enemy.y, '#F43F5E', 40);
-                  // Clear boss core
                   b.hitsLeft = 0;
                 } else {
-                  // Reflect back towards player with increased speed!
                   b.isParried = false;
                   const toPlayer = vecNorm(vecSub({ x: player.x, y: player.y }, { x: enemy.x, y: enemy.y }));
                   const rallySpeed = 380 + b.rallyCount * 120;
@@ -385,19 +585,20 @@ export function updateGameSimulation(
                 break;
               }
 
-              // Normal damage dealing
+              // Normal damage dealing with Bank Shot multiplier skill
               let effectiveDamage = b.damage;
               let isBankShot = false;
               if (b.wallBounces > 0) {
                 isBankShot = true;
-                effectiveDamage *= 2.0;
+                const bankMult = player.bankMultiplier || 2.0;
+                effectiveDamage *= bankMult;
                 stats.bankShots++;
                 soundManager.playBankShotFanfare();
                 floatingTexts.push({
                   id: Math.random(),
                   x: enemy.x,
                   y: enemy.y - 35,
-                  text: '🎱 BANK SHOT! x2.0',
+                  text: `🎱 BANK SHOT! x${bankMult.toFixed(1)}`,
                   color: '#FBBF24',
                   alpha: 1,
                   scale: 1.3,
@@ -409,11 +610,32 @@ export function updateGameSimulation(
 
               enemy.hp -= effectiveDamage;
               enemy.hitFlashTimer = 0.15;
-              // Push enemy slightly
               enemy.vx += b.vx * 0.15;
               enemy.vy += b.vy * 0.15;
 
-              // Knockback
+              // Cluster Blast skill
+              if (player.explosiveLevel > 0) {
+                const splashDmg = Math.round(20 * player.explosiveLevel);
+                shockwaves.push({
+                  x: enemy.x,
+                  y: enemy.y,
+                  radius: 8,
+                  maxRadius: 85,
+                  alpha: 1,
+                  color: '#F97316',
+                  lineWidth: 4,
+                  expansionSpeed: 380,
+                });
+                createImpactSparks(particles, enemy.x, enemy.y, '#F97316', 16);
+                for (const other of enemies) {
+                  if (other.id === enemy.id || other.hp <= 0) continue;
+                  if (vecDist({ x: enemy.x, y: enemy.y }, { x: other.x, y: other.y }) < 90) {
+                    other.hp -= splashDmg;
+                    other.hitFlashTimer = 0.15;
+                  }
+                }
+              }
+
               createImpactSparks(particles, b.x, b.y, b.color, 12);
               floatingTexts.push({
                 id: Math.random(),
@@ -429,14 +651,12 @@ export function updateGameSimulation(
               });
 
               if (b.isLaserPenetrating) {
-                // Piercing laser
                 b.hitsLeft = (b.hitsLeft ?? 3) - 1;
               } else {
                 b.hitsLeft = 0;
               }
 
               if (b.parryRating === 'GREAT') {
-                // Shockwave on hit
                 shockwaves.push({
                   x: enemy.x,
                   y: enemy.y,
@@ -456,9 +676,25 @@ export function updateGameSimulation(
         const dist = vecDist({ x: b.x, y: b.y }, { x: player.x, y: player.y });
         if (dist < b.radius + player.radius) {
           if (player.invulnerableTimer <= 0) {
-            player.hp -= 1;
+            const hitDamage = Math.round(18 + Math.min(stats.wave * 1.5, 22));
+            player.hp = Math.max(0, player.hp - hitDamage);
             player.invulnerableTimer = 1.0;
-            stats.chain = 0; // reset chain on damage
+            if (stats.chain > 5) {
+              floatingTexts.push({
+                id: Math.random(),
+                x: player.x,
+                y: player.y - 45,
+                text: 'COMBO BROKEN!',
+                subtext: `x${(1 + stats.chain * 0.2).toFixed(1)} Multiplier Lost`,
+                color: '#EF4444',
+                alpha: 1,
+                scale: 1.3,
+                vy: -35,
+                life: 0,
+                maxLife: 1.1,
+              });
+            }
+            stats.chain = 0;
             soundManager.playPlayerHit();
             triggerScreenShake(12);
             createImpactSparks(particles, player.x, player.y, '#EF4444', 16);
@@ -466,7 +702,7 @@ export function updateGameSimulation(
               id: Math.random(),
               x: player.x,
               y: player.y - 20,
-              text: 'HIT! -1 HP',
+              text: `-${hitDamage} HP`,
               color: '#EF4444',
               alpha: 1,
               scale: 1.2,
@@ -513,12 +749,11 @@ export function updateGameSimulation(
         soundManager.playWallBounce();
       }
 
-      // Player vs Enemy Collision (Sling tackle / Billiards impact)
+      // Player vs Enemy Collision (Sling tackle)
       const pDist = vecDist({ x: player.x, y: player.y }, { x: e.x, y: e.y });
       if (pDist < player.radius + e.radius) {
         const normal = vecNorm(vecSub({ x: e.x, y: e.y }, { x: player.x, y: player.y }));
-        // Elastic collision math
-        const m1 = 3.0; // player mass
+        const m1 = 3.0;
         const m2 = e.mass;
         const v1n = vecDot({ x: player.vx, y: player.vy }, normal);
         const v2n = vecDot({ x: e.vx, y: e.vy }, normal);
@@ -529,8 +764,8 @@ export function updateGameSimulation(
         const pSpeed = vecLen({ x: player.vx, y: player.vy });
 
         if (pSpeed > 150) {
-          // Player dashed into enemy! Deal tackle damage!
-          const tackleDamage = Math.round(pSpeed * 0.12);
+          const tackleMult = player.tackleMultiplier || 1.0;
+          const tackleDamage = Math.round(pSpeed * 0.12 * tackleMult);
           e.hp -= tackleDamage;
           e.hitFlashTimer = 0.15;
           e.isKnockedByPlayer = true;
@@ -550,7 +785,6 @@ export function updateGameSimulation(
             maxLife: 0.7,
           });
 
-          // Separate
           const overlap = player.radius + e.radius - pDist;
           player.x -= normal.x * overlap * 0.5;
           player.y -= normal.y * overlap * 0.5;
@@ -562,12 +796,39 @@ export function updateGameSimulation(
           e.vx += normal.x * (v2nNew - v2n);
           e.vy += normal.y * (v2nNew - v2n);
         } else if (player.invulnerableTimer <= 0) {
-          // Slow touch hurts player
-          player.hp -= 1;
+          const touchDamage = 16;
+          player.hp = Math.max(0, player.hp - touchDamage);
           player.invulnerableTimer = 1.0;
+          if (stats.chain > 5) {
+            floatingTexts.push({
+              id: Math.random(),
+              x: player.x,
+              y: player.y - 45,
+              text: 'COMBO BROKEN!',
+              subtext: `x${(1 + stats.chain * 0.2).toFixed(1)} Multiplier Lost`,
+              color: '#EF4444',
+              alpha: 1,
+              scale: 1.3,
+              vy: -35,
+              life: 0,
+              maxLife: 1.1,
+            });
+          }
           stats.chain = 0;
           soundManager.playPlayerHit();
           triggerScreenShake(10);
+          floatingTexts.push({
+            id: Math.random(),
+            x: player.x,
+            y: player.y - 20,
+            text: `-${touchDamage} HP`,
+            color: '#EF4444',
+            alpha: 1,
+            scale: 1.2,
+            vy: -40,
+            life: 0,
+            maxLife: 0.9,
+          });
         }
       }
 
@@ -578,7 +839,6 @@ export function updateGameSimulation(
         const minDist = e.radius + e2.radius;
         if (dist < minDist && dist > 0.001) {
           const normal = vecNorm(vecSub({ x: e2.x, y: e2.y }, { x: e.x, y: e.y }));
-          // Elastic exchange
           const m1 = e.mass;
           const m2 = e2.mass;
           const v1n = vecDot({ x: e.vx, y: e.vy }, normal);
@@ -589,17 +849,17 @@ export function updateGameSimulation(
 
           const relativeSpeed = Math.abs(v1n - v2n);
           if (relativeSpeed > 100 && (e.isKnockedByPlayer || e2.isKnockedByPlayer)) {
-            // Billiards crash damage!
             let crashDamage = Math.round(relativeSpeed * 0.08);
             if (e.wallBounces > 0 || e2.wallBounces > 0) {
-              crashDamage *= 2;
+              const bankMult = player.bankMultiplier || 2.0;
+              crashDamage = Math.round(crashDamage * bankMult);
               stats.bankShots++;
               soundManager.playBankShotFanfare();
               floatingTexts.push({
                 id: Math.random(),
                 x: (e.x + e2.x) / 2,
                 y: (e.y + e2.y) / 2 - 25,
-                text: '🎱 BANK COLLISION! x2.0',
+                text: `🎱 BANK COLLISION! x${bankMult.toFixed(1)}`,
                 color: '#FBBF24',
                 alpha: 1,
                 scale: 1.2,
@@ -615,7 +875,6 @@ export function updateGameSimulation(
             soundManager.playWallBounce();
           }
 
-          // Positional resolve
           const overlap = minDist - dist;
           e.x -= normal.x * overlap * 0.5;
           e.y -= normal.y * overlap * 0.5;
@@ -631,13 +890,53 @@ export function updateGameSimulation(
     }
   }
 
-  // 4. Update Enemy AI / Attacks
-  updateEnemyAI(enemies, bullets, player, arenaWidth, arenaHeight, dt, floatingTexts);
+  // 4. Update Enemy AI / Attacks (Scaled by Wave difficulty)
+  updateEnemyAI(enemies, bullets, player, arenaWidth, arenaHeight, dt, stats.wave, floatingTexts);
 
-  // 5. Filter dead bullets & defeated enemies
+  // 5. Update EXP Gems (Magnetic attraction & Vampire Survivors style pickup)
+  for (let i = expGems.length - 1; i >= 0; i--) {
+    const gem = expGems[i];
+    gem.x += gem.vx * dt;
+    gem.y += gem.vy * dt;
+    gem.vx *= Math.pow(0.88, dt * 60);
+    gem.vy *= Math.pow(0.88, dt * 60);
+    gem.lifeTime += dt;
+
+    const pDist = vecDist({ x: gem.x, y: gem.y }, { x: player.x, y: player.y });
+
+    // Magnetic pull
+    if (pDist < player.magnetRadius) {
+      gem.isAttracted = true;
+    }
+    if (gem.isAttracted) {
+      const toP = vecNorm(vecSub({ x: player.x, y: player.y }, { x: gem.x, y: gem.y }));
+      const pullSpeed = 480 + (player.magnetRadius > 150 ? 200 : 0);
+      gem.vx += toP.x * pullSpeed * dt;
+      gem.vy += toP.y * pullSpeed * dt;
+    }
+
+    // Pickup
+    if (pDist < player.radius + 14) {
+      player.exp += gem.value;
+      soundManager.playExpCollect();
+      createImpactSparks(particles, gem.x, gem.y, gem.color, 4);
+
+      // Check Level-up!
+      if (player.exp >= player.expToNext) {
+        player.exp -= player.expToNext;
+        player.level += 1;
+        player.expToNext = Math.round(player.expToNext * 1.35 + 15);
+        soundManager.playLevelUp();
+        onLevelUp();
+      }
+
+      expGems.splice(i, 1);
+    }
+  }
+
+  // 6. Filter dead bullets & defeated enemies (Spawn EXP gems on enemy death!)
   const nextBullets = bullets.filter((b) => {
     if (b.hitsLeft !== undefined && b.hitsLeft <= 0) return false;
-    // Parried bullets bounce 4 times before expiring; unparried disappear on edge
     if (b.isParried) {
       return b.wallBounces <= 4 && b.lifeTime < 5.0;
     }
@@ -653,10 +952,11 @@ export function updateGameSimulation(
   const nextEnemies = enemies.filter((e) => {
     if (e.hitFlashTimer > 0) e.hitFlashTimer = Math.max(0, e.hitFlashTimer - dt);
     if (e.hp <= 0) {
-      // Enemy defeated!
       stats.enemiesDefeated++;
+      const prevChain = stats.chain;
       stats.chain++;
       stats.maxChain = Math.max(stats.maxChain, stats.chain);
+      checkChainMilestone(prevChain, stats.chain, player, floatingTexts, shockwaves);
       const scoreGain = Math.round(100 * e.mass * (1 + stats.chain * 0.2));
       stats.score += scoreGain;
       stats.highScore = Math.max(stats.highScore, stats.score);
@@ -664,6 +964,24 @@ export function updateGameSimulation(
       soundManager.playEnemyExplosion(e.mass);
       triggerScreenShake(e.mass * 4);
       createExplosionSparks(particles, e.x, e.y, getEnemyColor(e.type), Math.round(e.mass * 12));
+
+      // Drop EXP Gems (Vampire Survivors style!)
+      const gemCount = Math.max(1, Math.round(e.mass * 1.5));
+      for (let g = 0; g < gemCount; g++) {
+        const gAngle = Math.random() * Math.PI * 2;
+        const gSpeed = 40 + Math.random() * 80;
+        expGems.push({
+          id: Math.random(),
+          x: e.x,
+          y: e.y,
+          vx: Math.cos(gAngle) * gSpeed,
+          vy: Math.sin(gAngle) * gSpeed,
+          value: Math.round(12 * e.mass),
+          color: e.mass >= 4 ? '#EC4899' : e.mass >= 1.5 ? '#FBBF24' : '#38BDF8',
+          lifeTime: 0,
+          isAttracted: false,
+        });
+      }
 
       floatingTexts.push({
         id: Math.random(),
@@ -682,7 +1000,7 @@ export function updateGameSimulation(
     return true;
   });
 
-  // 6. Update Particles, Shockwaves, Floating Texts
+  // 7. Update Particles, Shockwaves, Floating Texts
   for (let i = particles.length - 1; i >= 0; i--) {
     const p = particles[i];
     p.x += p.vx * dt;
@@ -719,11 +1037,20 @@ export function updateGameSimulation(
     }
   }
 
-  return { bullets: nextBullets, enemies: nextEnemies };
+  for (let i = lightningBolts.length - 1; i >= 0; i--) {
+    const lb = lightningBolts[i];
+    lb.lifeTime += dt;
+    lb.alpha = Math.max(0, 1 - lb.lifeTime / lb.maxLife);
+    if (lb.lifeTime >= lb.maxLife) {
+      lightningBolts.splice(i, 1);
+    }
+  }
+
+  return { bullets: nextBullets, enemies: nextEnemies, expGems, lightningBolts };
 }
 
 /**
- * Hyper Just-Parry Execution with 3-tier blend formula
+ * Hyper Just-Parry Execution with Straight Direct Homing on PERFECT
  */
 export function attemptParry(
   player: Player,
@@ -737,16 +1064,15 @@ export function attemptParry(
   triggerHitStop: (durationMs: number) => void
 ): boolean {
   if (player.parryCooldownTimer > 0) {
-    // Save to input buffer (100ms)
     player.parryBufferTimer = 0.10;
     return false;
   }
 
   const R = player.radius; // 16px
+  const windowMult = player.parryWindowMultiplier || 1.0;
   let bestRating: 'PERFECT' | 'GREAT' | 'GOOD' | null = null;
   let parriedAny = false;
 
-  // Vector aiming from player to cursor
   const cursorAim = vecNorm(vecSub(cursorPos, { x: player.x, y: player.y }));
 
   // Check all unparried incoming bullets
@@ -755,17 +1081,13 @@ export function attemptParry(
 
     const dist = vecDist({ x: player.x, y: player.y }, { x: b.x, y: b.y });
 
-    // Distance windows based on specification:
-    // PERFECT: R + 2 ~ R + 18 (18 ~ 34px)
-    // GREAT: R + 19 ~ R + 32 (35 ~ 48px)
-    // GOOD: R + 33 ~ R + 44 (49 ~ 60px)
     let rating: 'PERFECT' | 'GREAT' | 'GOOD' | null = null;
 
-    if (dist >= R + 2 && dist <= R + 18) {
+    if (dist >= R + 2 && dist <= (R + 18) * windowMult) {
       rating = 'PERFECT';
-    } else if (dist > R + 18 && dist <= R + 32) {
+    } else if (dist > (R + 18) * windowMult && dist <= (R + 32) * windowMult) {
       rating = 'GREAT';
-    } else if (dist > R + 32 && dist <= R + 44) {
+    } else if (dist > (R + 32) * windowMult && dist <= (R + 44) * windowMult) {
       rating = 'GOOD';
     }
 
@@ -775,7 +1097,6 @@ export function attemptParry(
         bestRating = rating;
       }
 
-      // Physical impact normal from player to bullet
       const impactNormal = vecNorm(vecSub({ x: b.x, y: b.y }, { x: player.x, y: player.y }));
       const vIn = { x: b.vx, y: b.vy };
       const mirrorVector = vecNorm(reflectVector(vIn, impactNormal));
@@ -785,19 +1106,64 @@ export function attemptParry(
       let damageMultiplier = 1.0;
 
       if (rating === 'PERFECT') {
-        // Spec formula: normalize(0.65 * A_cursor + 0.35 * N_impact)
-        dOut = vecNorm({
-          x: 0.65 * cursorAim.x + 0.35 * impactNormal.x,
-          y: 0.65 * cursorAim.y + 0.35 * impactNormal.y,
-        });
-        speedMultiplier = 3.5;
-        damageMultiplier = 3.0;
+        // "パーフェクトの時はまっすぐ敵に跳ね返るようにして"
+        // Find nearest living enemy to fly directly straight at it!
+        let targetEnemy: Enemy | null = null;
+        let minEnemyDist = Infinity;
+        for (const en of enemies) {
+          if (en.hp <= 0) continue;
+          const d = vecDist({ x: b.x, y: b.y }, { x: en.x, y: en.y });
+          if (d < minEnemyDist) {
+            minEnemyDist = d;
+            targetEnemy = en;
+          }
+        }
+
+        if (targetEnemy) {
+          // Direct straight return into the enemy!
+          dOut = vecNorm(vecSub({ x: targetEnemy.x, y: targetEnemy.y }, { x: b.x, y: b.y }));
+        } else {
+          dOut = cursorAim;
+        }
+
+        speedMultiplier = 3.6;
+        damageMultiplier = 3.2;
         b.isLaserPenetrating = true;
         b.hitsLeft = 3;
-        b.color = '#FDE047'; // golden laser
+        b.color = '#FDE047';
         b.glowColor = '#F59E0B';
+
+        // Multi-Mirror skill: Spawn extra split laser beams!
+        if (player.multiMirrorLevel > 0) {
+          for (const angleOffset of [-0.28, 0.28]) {
+            const cosA = Math.cos(angleOffset);
+            const sinA = Math.sin(angleOffset);
+            const splitDir = {
+              x: dOut.x * cosA - dOut.y * sinA,
+              y: dOut.x * sinA + dOut.y * cosA,
+            };
+            const splitSpeed = Math.max(vecLen(vIn), 240) * speedMultiplier * 0.9;
+            bullets.push({
+              id: Math.random(),
+              x: b.x,
+              y: b.y,
+              vx: splitDir.x * splitSpeed,
+              vy: splitDir.y * splitSpeed,
+              radius: b.radius * 0.85,
+              damage: b.damage * damageMultiplier * 0.8,
+              isParried: true,
+              parryRating: 'PERFECT',
+              isLaserPenetrating: true,
+              hitsLeft: 2,
+              wallBounces: 0,
+              color: '#FDE047',
+              glowColor: '#F59E0B',
+              trail: [],
+              lifeTime: 0,
+            });
+          }
+        }
       } else if (rating === 'GREAT') {
-        // Spec formula: normalize(0.50 * N_impact + 0.35 * A_cursor + 0.15 * R_mirror)
         dOut = vecNorm({
           x: 0.50 * impactNormal.x + 0.35 * cursorAim.x + 0.15 * mirrorVector.x,
           y: 0.50 * impactNormal.y + 0.35 * cursorAim.y + 0.15 * mirrorVector.y,
@@ -809,7 +1175,6 @@ export function attemptParry(
         b.color = '#38BDF8';
         b.glowColor = '#0284C7';
       } else {
-        // Spec formula: normalize(0.75 * N_impact + 0.25 * R_mirror)
         dOut = vecNorm({
           x: 0.75 * impactNormal.x + 0.25 * mirrorVector.x,
           y: 0.75 * impactNormal.y + 0.25 * mirrorVector.y,
@@ -826,7 +1191,7 @@ export function attemptParry(
       const newSpeed = initialSpeed * speedMultiplier;
       b.vx = dOut.x * newSpeed;
       b.vy = dOut.y * newSpeed;
-      b.damage *= damageMultiplier;
+      b.damage = 30 * damageMultiplier;
       b.isParried = true;
       b.parryRating = rating;
       b.wallBounces = 0;
@@ -842,11 +1207,14 @@ export function attemptParry(
 
     if (bestRating === 'PERFECT') {
       stats.perfectParries++;
+      const prevChain = stats.chain;
       stats.chain += 0.5;
-      player.parryCooldownTimer = 0; // 0s CD reset!
+      stats.maxChain = Math.max(stats.maxChain, stats.chain);
+      checkChainMilestone(prevChain, stats.chain, player, floatingTexts, shockwaves);
+      player.parryCooldownTimer = 0;
       soundManager.playParry('PERFECT', Math.floor(stats.chain));
       triggerScreenShake(8);
-      triggerHitStop(33); // 2F micro hitstop (0.033s)
+      triggerHitStop(33);
 
       shockwaves.push({
         x: player.x,
@@ -863,8 +1231,8 @@ export function attemptParry(
         id: Math.random(),
         x: player.x,
         y: player.y - 30,
-        text: '⚡ PERFECT!! x3.5',
-        subtext: '0.00s CD RESET',
+        text: '⚡ PERFECT!! x3.6',
+        subtext: 'DIRECT HOMING · 0s CD',
         color: '#FDE047',
         alpha: 1,
         scale: 1.4,
@@ -874,8 +1242,11 @@ export function attemptParry(
       });
     } else if (bestRating === 'GREAT') {
       stats.greatParries++;
+      const prevChain = stats.chain;
       stats.chain += 0.25;
-      player.parryCooldownTimer = 0; // 0s CD reset!
+      stats.maxChain = Math.max(stats.maxChain, stats.chain);
+      checkChainMilestone(prevChain, stats.chain, player, floatingTexts, shockwaves);
+      player.parryCooldownTimer = 0;
       soundManager.playParry('GREAT', Math.floor(stats.chain));
       triggerScreenShake(5);
 
@@ -904,8 +1275,7 @@ export function attemptParry(
         maxLife: 0.8,
       });
     } else {
-      // GOOD
-      player.parryCooldownTimer = 0.12; // 0.12s short delay, zero move lock
+      player.parryCooldownTimer = 0.12;
       soundManager.playParry('GOOD', Math.floor(stats.chain));
       triggerScreenShake(3);
 
@@ -925,9 +1295,8 @@ export function attemptParry(
 
     return true;
   } else {
-    // WHIFF
     player.lastParryRating = 'WHIFF';
-    player.parryCooldownTimer = 0.18; // 0.18s interval to prevent mashing
+    player.parryCooldownTimer = 0.18;
     soundManager.playParry('WHIFF', 0);
 
     floatingTexts.push({
@@ -947,7 +1316,7 @@ export function attemptParry(
 }
 
 /**
- * AI logic for the 4 enemy types
+ * AI logic for the 4 enemy types (Scaled with Wave progression for gentle early ramp)
  */
 function updateEnemyAI(
   enemies: Enemy[],
@@ -956,6 +1325,7 @@ function updateEnemyAI(
   arenaWidth: number,
   arenaHeight: number,
   dt: number,
+  wave: number,
   floatingTexts: FloatingText[]
 ) {
   for (const e of enemies) {
@@ -966,7 +1336,6 @@ function updateEnemyAI(
     e.angle = Math.atan2(toPlayer.y, toPlayer.x);
 
     if (e.type === 'SNIPE_ORB') {
-      // Keep medium distance ~240px
       const targetDist = 240;
       const speed = 70;
       if (dist < targetDist - 30) {
@@ -978,17 +1347,18 @@ function updateEnemyAI(
       }
 
       e.attackTimer += dt;
-      // Telegraph 0.3s before firing
-      if (e.attackTimer >= e.attackInterval - 0.3 && !e.isTelegraphing) {
+      // Telegraph warning
+      if (e.attackTimer >= e.attackInterval - 0.4 && !e.isTelegraphing) {
         e.isTelegraphing = true;
         soundManager.playTelegraphFlash();
       }
 
+      // Early waves: bullet speed starts gentle (190 px/s in wave 1) and scales up to 450
+      const bSpeed = Math.min(190 + (wave - 1) * 35, 450);
+
       if (e.attackTimer >= e.attackInterval) {
         e.attackTimer = 0;
         e.isTelegraphing = false;
-        // Fire high speed snipe bullet
-        const bSpeed = 440;
         bullets.push({
           id: Math.random(),
           x: e.x + dir.x * (e.radius + 6),
@@ -1007,15 +1377,14 @@ function updateEnemyAI(
         soundManager.playEnemyFire();
       }
     } else if (e.type === 'GATLING_SENTINEL') {
-      // Anchors down and shoots 3-round bursts
       e.attackTimer += dt;
+      const bSpeed = Math.min(180 + (wave - 1) * 28, 400);
 
       if (e.burstCount && e.burstCount > 0) {
         e.burstTimer = (e.burstTimer || 0) + dt;
-        if (e.burstTimer >= 0.12) {
+        if (e.burstTimer >= 0.14) {
           e.burstTimer = 0;
           e.burstCount--;
-          const bSpeed = 380;
           bullets.push({
             id: Math.random(),
             x: e.x + dir.x * (e.radius + 8),
@@ -1035,26 +1404,23 @@ function updateEnemyAI(
         }
       } else if (e.attackTimer >= e.attackInterval) {
         e.attackTimer = 0;
-        e.burstCount = 3;
-        e.burstTimer = 0.12; // immediate first shot
+        e.burstCount = wave <= 2 ? 2 : wave <= 4 ? 3 : 4;
+        e.burstTimer = 0.14;
       }
     } else if (e.type === 'RICOCHET_PRISM') {
-      // Always faces the player with frontal shield
       e.shieldAngle = e.angle;
-      e.shieldArc = (120 * Math.PI) / 180; // 120 degrees arc
-
-      // Slowly drifts towards player
-      const speed = 55;
+      e.shieldArc = (120 * Math.PI) / 180;
+      const speed = 50;
       e.vx += dir.x * speed * dt;
       e.vy += dir.y * speed * dt;
 
       e.attackTimer += dt;
+      const bSpeed = Math.min(160 + (wave - 1) * 25, 320);
+
       if (e.attackTimer >= e.attackInterval) {
         e.attackTimer = 0;
-        // Fires twin diagonal deflected shots
-        for (const offset of [-0.4, 0.4]) {
+        for (const offset of [-0.35, 0.35]) {
           const shotAngle = e.angle + offset;
-          const bSpeed = 260;
           bullets.push({
             id: Math.random(),
             x: e.x + Math.cos(shotAngle) * (e.radius + 6),
@@ -1074,7 +1440,6 @@ function updateEnemyAI(
         soundManager.playEnemyFire();
       }
     } else if (e.type === 'GRAVITY_CORE') {
-      // Boss AI: heavy, orbits center, alternates ring bullets and table tennis pink core
       const centerX = arenaWidth / 2;
       const centerY = arenaHeight / 2;
       const toCenter = vecSub({ x: centerX, y: centerY }, { x: e.x, y: e.y });
@@ -1084,12 +1449,10 @@ function updateEnemyAI(
       e.attackTimer += dt;
       if (e.attackTimer >= e.attackInterval) {
         e.attackTimer = 0;
-        // Alternates attack mode
         const isMegaCoreShot = (e.burstCount || 0) % 2 === 1;
         e.burstCount = (e.burstCount || 0) + 1;
 
         if (isMegaCoreShot) {
-          // Launch the Mega Energy Core (table tennis parryable!)
           const coreSpeed = 220;
           bullets.push({
             id: Math.random(),
@@ -1124,9 +1487,8 @@ function updateEnemyAI(
             maxLife: 1.2,
           });
         } else {
-          // 12-way ring burst with opening
-          const ringCount = 10;
-          const bSpeed = 200;
+          const ringCount = Math.min(8 + wave, 12);
+          const bSpeed = 190;
           for (let k = 0; k < ringCount; k++) {
             const angle = e.angle + (k * (Math.PI * 2)) / ringCount;
             bullets.push({

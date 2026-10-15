@@ -247,6 +247,90 @@ class SoundManager {
     osc.stop(t + 0.2);
   }
 
+  public playExpCollect() {
+    if (this.isMuted) return;
+    this.initContext();
+    if (!this.ctx || !this.masterGain) return;
+
+    const t = this.ctx.currentTime;
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(1200 + Math.random() * 200, t);
+    osc.frequency.exponentialRampToValueAtTime(1600, t + 0.05);
+    gain.gain.setValueAtTime(0.12, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.06);
+    osc.connect(gain);
+    gain.connect(this.masterGain);
+    osc.start(t);
+    osc.stop(t + 0.06);
+  }
+
+  public playLevelUp() {
+    if (this.isMuted) return;
+    this.initContext();
+    if (!this.ctx || !this.masterGain) return;
+
+    const t = this.ctx.currentTime;
+    // Ascending arpeggio (C5 -> E5 -> G5 -> C6)
+    const notes = [523.25, 659.25, 783.99, 1046.5];
+    notes.forEach((freq, i) => {
+      const osc = this.ctx!.createOscillator();
+      const gain = this.ctx!.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, t + i * 0.07);
+      gain.gain.setValueAtTime(0.4, t + i * 0.07);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + i * 0.07 + 0.4);
+      osc.connect(gain);
+      gain.connect(this.masterGain!);
+      osc.start(t + i * 0.07);
+      osc.stop(t + i * 0.07 + 0.4);
+    });
+  }
+
+  public playComboSurge(tier: number = 1) {
+    if (this.isMuted) return;
+    this.initContext();
+    if (!this.ctx || !this.masterGain) return;
+
+    const t = this.ctx.currentTime;
+    // Ascending power-up chord for combo surge (Tier 1: 5+, Tier 2: 10+, Tier 3: 15+)
+    const baseFreq = tier >= 3 ? 659.25 : tier >= 2 ? 587.33 : 523.25;
+    const chords = [baseFreq, baseFreq * 1.25, baseFreq * 1.5, baseFreq * 2.0];
+    chords.forEach((freq, i) => {
+      const osc = this.ctx!.createOscillator();
+      const gain = this.ctx!.createGain();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(freq, t + i * 0.045);
+      osc.frequency.exponentialRampToValueAtTime(freq * 1.15, t + i * 0.045 + 0.14);
+      gain.gain.setValueAtTime(0.35, t + i * 0.045);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + i * 0.045 + 0.35);
+      osc.connect(gain);
+      gain.connect(this.masterGain!);
+      osc.start(t + i * 0.045);
+      osc.stop(t + i * 0.045 + 0.35);
+    });
+  }
+
+  public playTeslaZap() {
+    if (this.isMuted) return;
+    this.initContext();
+    if (!this.ctx || !this.masterGain) return;
+
+    const t = this.ctx.currentTime;
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(950, t);
+    osc.frequency.exponentialRampToValueAtTime(150, t + 0.08);
+    gain.gain.setValueAtTime(0.2, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.09);
+    osc.connect(gain);
+    gain.connect(this.masterGain);
+    osc.start(t);
+    osc.stop(t + 0.09);
+  }
+
   public playEnemyFire() {
     if (this.isMuted) return;
     this.initContext();

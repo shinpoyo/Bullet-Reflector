@@ -2,7 +2,51 @@ export type ParryRating = 'PERFECT' | 'GREAT' | 'GOOD' | 'WHIFF';
 
 export type EnemyType = 'SNIPE_ORB' | 'GATLING_SENTINEL' | 'RICOCHET_PRISM' | 'GRAVITY_CORE';
 
-export type GameState = 'TITLE' | 'PLAYING' | 'PAUSED' | 'GAMEOVER' | 'VICTORY';
+export type GameState = 'TITLE' | 'PLAYING' | 'PAUSED' | 'GAMEOVER' | 'VICTORY' | 'LEVEL_UP';
+
+export type SkillId =
+  | 'MULTI_MIRROR'
+  | 'MAGNET_CORE'
+  | 'PARRY_WINDOW'
+  | 'EXPLOSIVE_RICOCHET'
+  | 'TESLA_DISCHARGE'
+  | 'CORE_REINFORCE'
+  | 'TACKLE_BOOST'
+  | 'TRICKSHOT_MASTER';
+
+export interface SkillDefinition {
+  id: SkillId;
+  name: string;
+  nameJa: string;
+  description: string;
+  icon: string;
+  maxLevel: number;
+}
+
+export interface ExpGem {
+  id: number;
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  value: number;
+  color: string;
+  lifeTime: number;
+  isAttracted: boolean;
+}
+
+export interface LightningBolt {
+  id: number;
+  startX: number;
+  startY: number;
+  endX: number;
+  endY: number;
+  points: Vector2D[];
+  alpha: number;
+  color: string;
+  lifeTime: number;
+  maxLife: number;
+}
 
 export interface Vector2D {
   x: number;
@@ -28,6 +72,19 @@ export interface Player {
   slingStart: Vector2D;
   slingCurrent: Vector2D;
   aimAngle: number;
+  // Vampire Survivors Roguelite mechanics
+  level: number;
+  exp: number;
+  expToNext: number;
+  magnetRadius: number;
+  skills: Record<SkillId, number>;
+  parryWindowMultiplier: number;
+  multiMirrorLevel: number;
+  explosiveLevel: number;
+  teslaLevel: number;
+  teslaTimer: number;
+  tackleMultiplier: number;
+  bankMultiplier: number;
 }
 
 export interface Bullet {
