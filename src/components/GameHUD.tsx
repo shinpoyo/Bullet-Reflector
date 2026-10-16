@@ -31,8 +31,54 @@ export const GameHUD: React.FC<GameHUDProps> = ({
   const isParryReady = player.parryCooldownTimer <= 0;
   const activeSkillEntries = Object.entries(player.skills || {}) as [SkillId, number][];
 
+  const [waveBanner, setWaveBanner] = React.useState<{ wave: number; visible: boolean }>({
+    wave: stats.wave,
+    visible: true,
+  });
+
+  const prevWaveRef = React.useRef(stats.wave);
+
+  React.useEffect(() => {
+    if (stats.wave !== prevWaveRef.current) {
+      prevWaveRef.current = stats.wave;
+      setWaveBanner({ wave: stats.wave, visible: true });
+      const timer = setTimeout(() => {
+        setWaveBanner((prev) => ({ ...prev, visible: false }));
+      }, 2500);
+      return () => clearTimeout(timer);
+    }
+  }, [stats.wave]);
+
   return (
     <div className="absolute inset-0 z-10 pointer-events-none flex flex-col justify-between select-none">
+      {/* Compact, Non-obtrusive Wave Announcement Banner (Safely at the top below EXP bar, leaving battlefield 100% visible) */}
+      {waveBanner.visible && (
+        <div className="absolute top-10 sm:top-12 left-1/2 -translate-x-1/2 pointer-events-none z-30 flex flex-col items-center animate-in fade-in slide-in-from-top-2 duration-200">
+          <div className="flex items-center gap-2 sm:gap-3 px-4 sm:px-6 py-1 sm:py-1.5 rounded-full bg-slate-950/80 border border-sky-400/50 shadow-[0_0_20px_rgba(56,189,248,0.3)] backdrop-blur-xs">
+            <span className="flex items-center gap-1.5 text-xs sm:text-sm font-mono font-black text-sky-300 tracking-wider">
+              <Sparkles className="w-3.5 h-3.5 text-sky-400" />
+              WAVE {waveBanner.wave}
+            </span>
+            <span className="w-1 h-1 rounded-full bg-slate-600" />
+            <span className="text-[10px] sm:text-xs font-mono text-amber-300 font-semibold">
+              {waveBanner.wave === 1
+                ? '2 HOSTILES · PREPARE'
+                : waveBanner.wave === 2
+                ? '3 HOSTILES · GATLING'
+                : waveBanner.wave === 3
+                ? '⚡ 5 HOSTILES · ARENA EXPANDED'
+                : waveBanner.wave === 4
+                ? '⚡ 8 HOSTILES · PRISMS'
+                : waveBanner.wave === 5
+                ? '💥 BOSS · GRAVITY CORE'
+                : `${Math.min(10 + (waveBanner.wave - 5) * 3, 24)} HOSTILES`}
+            </span>
+            <span className="w-1 h-1 rounded-full bg-slate-600 hidden sm:inline" />
+            <span className="text-[10px] sm:text-xs font-mono text-cyan-400 font-bold hidden sm:inline">+25 HP</span>
+          </div>
+        </div>
+      )}
+
       {/* Topmost Vampire Survivors Full-width EXP Bar */}
       <div className="w-full flex items-center gap-2.5 px-3 py-1 bg-slate-950/85 border-b border-slate-800/80 backdrop-blur-xs">
         <div className="flex items-center gap-1 px-2 py-0.5 rounded bg-cyan-500/20 border border-cyan-400/40 text-[11px] font-mono font-bold text-cyan-300 shrink-0">
@@ -86,11 +132,13 @@ export const GameHUD: React.FC<GameHUDProps> = ({
             </div>
 
             {/* Wave Badge */}
-            <div className="flex items-center gap-1.5 text-[10px] sm:text-xs font-mono text-slate-300 px-2 sm:px-3 py-0.5 sm:py-1 bg-slate-900/70 rounded-md border border-slate-800/50 w-fit">
-              <span className="text-slate-500">SECTOR</span>
-              <span className="font-bold text-sky-400 tabular-nums">WAVE {String(stats.wave).padStart(2, '0')}</span>
+            <div className="flex items-center gap-1.5 sm:gap-2 text-[11px] sm:text-xs font-mono text-slate-200 px-2.5 sm:px-3 py-1 sm:py-1.5 bg-slate-900/90 rounded-lg border border-sky-400/50 shadow-[0_0_12px_rgba(56,189,248,0.25)] w-fit">
+              <span className="text-slate-400 font-bold">SECTOR</span>
+              <span className="font-extrabold text-sky-300 text-xs sm:text-sm tabular-nums tracking-wide">
+                WAVE {String(stats.wave).padStart(2, '0')}
+              </span>
               {stats.wave >= 3 && (
-                <span className="text-[9px] text-cyan-400/80 border-l border-slate-700/60 pl-1 font-sans hidden sm:inline">
+                <span className="text-[9px] sm:text-[10px] text-amber-300 bg-amber-400/15 border border-amber-400/35 rounded px-1.5 py-0.2 font-sans font-semibold">
                   EXPANDED
                 </span>
               )}

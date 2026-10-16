@@ -964,6 +964,43 @@ class SoundManager {
     osc.stop(t + 0.3);
   }
 
+  public playPlayerDefeat() {
+    if (this.isMuted) return;
+    this.initContext();
+    if (!this.ctx || !this.masterGain) return;
+
+    const t = this.ctx.currentTime;
+
+    // Sub-bass heavy seismic implosion
+    const sub = this.ctx.createOscillator();
+    const subGain = this.ctx.createGain();
+    sub.type = 'sine';
+    sub.frequency.setValueAtTime(140, t);
+    sub.frequency.exponentialRampToValueAtTime(20, t + 1.2);
+    subGain.gain.setValueAtTime(0.9, t);
+    subGain.gain.exponentialRampToValueAtTime(0.001, t + 1.2);
+    sub.connect(subGain);
+    subGain.connect(this.masterGain);
+    sub.start(t);
+    sub.stop(t + 1.2);
+
+    // Resonant power failure down-sweep
+    const powerDown = this.ctx.createOscillator();
+    const pdGain = this.ctx.createGain();
+    powerDown.type = 'sawtooth';
+    powerDown.frequency.setValueAtTime(480, t);
+    powerDown.frequency.exponentialRampToValueAtTime(30, t + 0.9);
+    pdGain.gain.setValueAtTime(0.5, t);
+    pdGain.gain.exponentialRampToValueAtTime(0.001, t + 0.9);
+    powerDown.connect(pdGain);
+    pdGain.connect(this.masterGain);
+    powerDown.start(t);
+    powerDown.stop(t + 0.9);
+
+    // Dissonant digital shatter noise
+    this.playNoise(0.5, 0.45, 800);
+  }
+
   private playNoise(duration: number, volume: number, filterFreq = 1200) {
     if (!this.ctx || !this.masterGain) return;
     const bufferSize = Math.floor(this.ctx.sampleRate * duration);

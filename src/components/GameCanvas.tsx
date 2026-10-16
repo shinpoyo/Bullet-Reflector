@@ -64,6 +64,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     hitStopMs: number;
     lastTime: number;
     waveTransitionTimer: number;
+    isWaveTransitioning: boolean;
     baseWidth: number;
     baseHeight: number;
     arenaWidth: number;
@@ -72,6 +73,8 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     targetCameraZoom: number;
     isAimingDrag: boolean;
     dragStartPos: Vector2D;
+    isDying: boolean;
+    deathTimer: number;
   }>({
     virtualJoystick: {
       active: false,
@@ -149,6 +152,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     hitStopMs: 0,
     lastTime: performance.now(),
     waveTransitionTimer: 0,
+    isWaveTransitioning: false,
     baseWidth: 800,
     baseHeight: 600,
     arenaWidth: 800,
@@ -157,12 +161,14 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     targetCameraZoom: 1.0,
     isAimingDrag: false,
     dragStartPos: { x: 0, y: 0 },
+    isDying: false,
+    deathTimer: 0,
   });
 
   // Expose instant parry trigger for UI button / external calls
   const triggerParry = useCallback(() => {
     const state = gameStateRef.current;
-    if (isPaused || state.player.hp <= 0) return;
+    if (isPaused || state.player.hp <= 0 || state.isDying) return;
 
     // Use current mouse coordinate for aiming parry
     import('../game/physics').then(({ attemptParry }) => {
@@ -194,7 +200,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
   // Expose instant Dash trigger for UI button / Shift key
   const triggerDash = useCallback(() => {
     const state = gameStateRef.current;
-    if (isPaused || state.player.hp <= 0) return;
+    if (isPaused || state.player.hp <= 0 || state.isDying) return;
 
     let dashDir: Vector2D;
     const currentSpeed = vecLen({ x: state.player.vx, y: state.player.vy });
@@ -270,16 +276,12 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
 
       const w = Math.floor(rect.width);
       const h = Math.floor(rect.height);
+      if (w <= 0 || h <= 0) return;
 
       canvasRef.current.width = w * dpr;
       canvasRef.current.height = h * dpr;
       canvasRef.current.style.width = `${w}px`;
       canvasRef.current.style.height = `${h}px`;
-
-      const ctx = canvasRef.current.getContext('2d');
-      if (ctx) {
-        ctx.scale(dpr, dpr);
-      }
 
       const state = gameStateRef.current;
       state.baseWidth = w;
@@ -362,49 +364,54 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
         return;
       }
 
-      // Decaying Screen Shake
-      if (state.screenShake > 0) {
-        state.screenShake = Math.max(0, state.screenShake - rawDt * 24);
+      // Visceral Decaying Screen Shake (Exponential shock impulse damping)
+      if (state.screenShake > 0.05) {
+        state.screenShake = Math.max(0, state.screenShake - (state.screenShake * 10 + 8) * rawDt);
+      } else {
+        state.screenShake = 0;
       }
 
-      // Continuous Keyboard Micro-movement (WASD / Arrows)
-      const moveSpeed = 240;
-      let moveX = 0;
-      let moveY = 0;
-      if (state.heldKeys.has('KeyW') || state.heldKeys.has('ArrowUp')) moveY -= 1;
-      if (state.heldKeys.has('KeyS') || state.heldKeys.has('ArrowDown')) moveY += 1;
-      if (state.heldKeys.has('KeyA') || state.heldKeys.has('ArrowLeft')) moveX -= 1;
-      if (state.heldKeys.has('KeyD') || state.heldKeys.has('ArrowRight')) moveX += 1;
+      // Keyboard and touch steering (disabled during death collapse)
+      if (!state.isDying) {
+        // Continuous Keyboard Micro-movement (WASD / Arrows)
+        const moveSpeed = 240;
+        let moveX = 0;
+        let moveY = 0;
+        if (state.heldKeys.has('KeyW') || state.heldKeys.has('ArrowUp')) moveY -= 1;
+        if (state.heldKeys.has('KeyS') || state.heldKeys.has('ArrowDown')) moveY += 1;
+        if (state.heldKeys.has('KeyA') || state.heldKeys.has('ArrowLeft')) moveX -= 1;
+        if (state.heldKeys.has('KeyD') || state.heldKeys.has('ArrowRight')) moveX += 1;
 
-      if (moveX !== 0 || moveY !== 0) {
-        const moveDir = vecNorm({ x: moveX, y: moveY });
-        state.player.vx += moveDir.x * moveSpeed * rawDt * 9;
-        state.player.vy += moveDir.y * moveSpeed * rawDt * 9;
-        state.player.aimAngle = Math.atan2(moveDir.y, moveDir.x);
-      }
+        if (moveX !== 0 || moveY !== 0) {
+          const moveDir = vecNorm({ x: moveX, y: moveY });
+          state.player.vx += moveDir.x * moveSpeed * rawDt * 9;
+          state.player.vy += moveDir.y * moveSpeed * rawDt * 9;
+          state.player.aimAngle = Math.atan2(moveDir.y, moveDir.x);
+        }
 
-      // Continuous Touch Virtual Joystick Steering (Smartphone & Tablet)
-      if (state.virtualJoystick.active) {
-        const dx = state.virtualJoystick.currentX - state.virtualJoystick.startX;
-        const dy = state.virtualJoystick.currentY - state.virtualJoystick.startY;
-        const dist = Math.hypot(dx, dy);
-        const deadzone = 4;
-        const maxR = state.virtualJoystick.radius || 46;
+        // Continuous Touch Virtual Joystick Steering (Smartphone & Tablet)
+        if (state.virtualJoystick.active) {
+          const dx = state.virtualJoystick.currentX - state.virtualJoystick.startX;
+          const dy = state.virtualJoystick.currentY - state.virtualJoystick.startY;
+          const dist = Math.hypot(dx, dy);
+          const deadzone = 4;
+          const maxR = state.virtualJoystick.radius || 46;
 
-        if (dist > deadzone) {
-          const normMagnitude = clamp((dist - deadzone) / (maxR - deadzone), 0, 1);
-          const dirX = dx / dist;
-          const dirY = dy / dist;
-          const touchMoveSpeed = 280; // Smooth, agile, responsive 360-degree dodging!
-          state.player.vx += dirX * normMagnitude * touchMoveSpeed * rawDt * 10;
-          state.player.vy += dirY * normMagnitude * touchMoveSpeed * rawDt * 10;
-          state.player.aimAngle = Math.atan2(dirY, dirX);
+          if (dist > deadzone) {
+            const normMagnitude = clamp((dist - deadzone) / (maxR - deadzone), 0, 1);
+            const dirX = dx / dist;
+            const dirY = dy / dist;
+            const touchMoveSpeed = 280; // Smooth, agile, responsive 360-degree dodging!
+            state.player.vx += dirX * normMagnitude * touchMoveSpeed * rawDt * 10;
+            state.player.vy += dirY * normMagnitude * touchMoveSpeed * rawDt * 10;
+            state.player.aimAngle = Math.atan2(dirY, dirX);
+          }
         }
       }
 
       // Calculate Sling Trajectory if aiming
       let trajectorySegments: RaycastSegment[] = [];
-      if (state.player.isAimingSling) {
+      if (state.player.isAimingSling && !state.isDying) {
         const pullVector = {
           x: state.player.x - state.player.slingCurrent.x,
           y: state.player.y - state.player.slingCurrent.y,
@@ -423,7 +430,8 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
         }
       }
 
-      // Update Simulation with 4-substep physics
+      // Update Simulation with 4-substep physics (slow motion if player is in death collapse)
+      const simDt = state.isDying ? rawDt * 0.2 : rawDt;
       const {
         bullets: nextBullets,
         enemies: nextEnemies,
@@ -443,7 +451,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
         state.arenaWidth,
         state.arenaHeight,
         state.mousePos,
-        rawDt,
+        simDt,
         (intensity) => {
           state.screenShake = Math.max(state.screenShake, intensity);
         },
@@ -459,9 +467,9 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
       state.lightningBolts = nextLightning;
 
       // Check Wave Completion
-      if (state.enemies.length === 0) {
-        state.waveTransitionTimer += rawDt;
-        if (state.waveTransitionTimer >= 1.2) {
+      if (state.enemies.length === 0 && !state.isDying) {
+        if (!state.isWaveTransitioning) {
+          state.isWaveTransitioning = true;
           state.waveTransitionTimer = 0;
           state.stats.wave += 1;
           state.stats.maxWave = Math.max(state.stats.maxWave, state.stats.wave);
@@ -469,40 +477,110 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
           // Restore +25 numerical HP on wave clear!
           state.player.hp = Math.min(state.player.maxHp, state.player.hp + 25);
 
+          // Clean up leftover unparried enemy bullets for peace of mind
+          state.bullets = state.bullets.filter((b) => b.isParried);
+
           // Check Arena Scaling (Stage widens from Wave 3+)
           const newScale = getWaveArenaScale(state.stats.wave);
+          const oldArenaW = state.arenaWidth;
+          const oldArenaH = state.arenaHeight;
           state.arenaWidth = Math.round(state.baseWidth * newScale);
           state.arenaHeight = Math.round(state.baseHeight * newScale);
           state.targetCameraZoom = 1.0 / newScale;
 
-          soundManager.playBankShotFanfare();
-          const isExpanded = newScale > 1.0;
-          state.floatingTexts.push({
-            id: Math.random(),
-            x: state.arenaWidth / 2,
-            y: state.arenaHeight / 2 - 30,
-            text: `WAVE ${state.stats.wave} INCOMING!`,
-            subtext: isExpanded ? `+25 HP · ARENA EXPANDED (${Math.round(newScale * 100)}%)` : '+25 HP RESTORED',
-            color: '#38BDF8',
-            alpha: 1,
-            scale: 1.5,
-            vy: -30,
-            life: 0,
-            maxLife: 1.4,
-          });
+          // Seamless coordinate preservation on expansion:
+          const shiftX = (state.arenaWidth - oldArenaW) / 2;
+          const shiftY = (state.arenaHeight - oldArenaH) / 2;
+          if (shiftX !== 0 || shiftY !== 0) {
+            state.player.x += shiftX;
+            state.player.y += shiftY;
+            for (const gem of state.expGems) {
+              gem.x += shiftX;
+              gem.y += shiftY;
+            }
+            for (const b of state.bullets) {
+              b.x += shiftX;
+              b.y += shiftY;
+            }
+          }
 
-          state.enemies = spawnWaveEnemies(state.stats.wave, state.arenaWidth, state.arenaHeight);
+          soundManager.playBankShotFanfare();
+        } else {
+          // Grace period: enemies do NOT appear or attack during this 1.5s announcement countdown
+          state.waveTransitionTimer += rawDt;
+          if (state.waveTransitionTimer >= 1.5) {
+            state.waveTransitionTimer = 0;
+            state.isWaveTransitioning = false;
+            state.enemies = spawnWaveEnemies(state.stats.wave, state.arenaWidth, state.arenaHeight);
+          }
         }
       }
 
-      // Check Player Death
+      // Check Player Death & Complete Enemy Freeze
       if (state.player.hp <= 0) {
-        if (state.stats.score > highScore) {
-          localStorage.setItem('bullet_reflector_highscore', String(state.stats.score));
-          setHighScore(state.stats.score);
+        if (!state.isDying) {
+          state.isDying = true;
+          state.deathTimer = 0;
+          state.screenShake = 24;
+          soundManager.playPlayerDefeat();
+
+          // Instantly freeze all enemies in place and clear their attacks
+          for (const e of state.enemies) {
+            e.vx = 0;
+            e.vy = 0;
+            e.isTelegraphing = false;
+          }
+          // Remove unparried hostile enemy bullets so no bullets keep flying or hitting
+          state.bullets = state.bullets.filter((b) => b.isParried);
+
+          // Core rupture particle explosion
+          for (let i = 0; i < 40; i++) {
+            const angle = Math.random() * Math.PI * 2;
+            const speed = 40 + Math.random() * 260;
+            state.particles.push({
+              x: state.player.x,
+              y: state.player.y,
+              vx: Math.cos(angle) * speed,
+              vy: Math.sin(angle) * speed,
+              radius: 2 + Math.random() * 4,
+              color: Math.random() > 0.4 ? '#F43F5E' : '#38BDF8',
+              alpha: 1,
+              decay: 0.6 + Math.random() * 0.5,
+              shape: 'spark',
+            });
+          }
+
+          // Core rupture shockwave
+          state.shockwaves.push({
+            x: state.player.x,
+            y: state.player.y,
+            radius: 12,
+            maxRadius: 180,
+            alpha: 1,
+            color: '#F43F5E',
+            lineWidth: 4.5,
+            expansionSpeed: 200,
+          });
         }
-        onGameOver(state.stats, false);
-        return;
+
+        // Lock enemy movement, velocities, and attacks every frame while dead
+        for (const e of state.enemies) {
+          e.vx = 0;
+          e.vy = 0;
+          e.isTelegraphing = false;
+        }
+
+        state.deathTimer += rawDt;
+
+        // Cinematic 1.4s death slow-motion before transitioning to GameOver modal
+        if (state.deathTimer >= 1.4) {
+          if (state.stats.score > highScore) {
+            localStorage.setItem('bullet_reflector_highscore', String(state.stats.score));
+            setHighScore(state.stats.score);
+          }
+          onGameOver(state.stats, false);
+          return;
+        }
       }
 
       // Render Scene
@@ -510,29 +588,37 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
       if (canvas) {
         const ctx = canvas.getContext('2d');
         if (ctx) {
-          renderGameScene({
-            ctx,
-            width: state.baseWidth,
-            height: state.baseHeight,
-            arenaWidth: state.arenaWidth,
-            arenaHeight: state.arenaHeight,
-            cameraZoom: state.cameraZoom,
-            player: state.player,
-            bullets: state.bullets,
-            enemies: state.enemies,
-            expGems: state.expGems,
-            lightningBolts: state.lightningBolts,
-            particles: state.particles,
-            shockwaves: state.shockwaves,
-            floatingTexts: state.floatingTexts,
-            wallFlashes: state.wallFlashes,
-            trajectorySegments,
-            mousePos: state.mousePos,
-            virtualJoystick: state.virtualJoystick,
-            screenShake: state.screenShake,
-            time: currentTime / 1000,
-            stats: state.stats,
-          });
+          try {
+            renderGameScene({
+              ctx,
+              width: state.baseWidth,
+              height: state.baseHeight,
+              arenaWidth: state.arenaWidth,
+              arenaHeight: state.arenaHeight,
+              cameraZoom: state.cameraZoom,
+              player: state.player,
+              bullets: state.bullets,
+              enemies: state.enemies,
+              expGems: state.expGems,
+              lightningBolts: state.lightningBolts,
+              particles: state.particles,
+              shockwaves: state.shockwaves,
+              floatingTexts: state.floatingTexts,
+              wallFlashes: state.wallFlashes,
+              trajectorySegments,
+              mousePos: state.mousePos,
+              virtualJoystick: state.virtualJoystick,
+              screenShake: state.screenShake,
+              time: currentTime / 1000,
+              stats: state.stats,
+            });
+          } catch (renderErr) {
+            console.error('Render error:', renderErr);
+            ctx.setTransform(1, 0, 0, 1, 0, 0);
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = '#040711';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+          }
         }
       }
 
@@ -703,7 +789,6 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
           const launchSpeed = clamp(pullDist * 5, 200, 750);
           state.player.vx = launchDir.x * launchSpeed;
           state.player.vy = launchDir.y * launchSpeed;
-          state.player.isKnockedByPlayer = true;
           soundManager.playSlingDash();
         }
 

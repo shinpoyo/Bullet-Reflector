@@ -714,8 +714,10 @@ export function updateGameSimulation(
             }
             stats.chain = 0;
             soundManager.playPlayerHit();
-            triggerScreenShake(12);
-            createImpactSparks(particles, player.x, player.y, '#EF4444', 16);
+            // Visceral damage screen shake + hit-stop crunch
+            triggerScreenShake(Math.max(20, hitDamage * 0.95));
+            triggerHitStop(50);
+            createImpactSparks(particles, player.x, player.y, '#EF4444', 20);
             floatingTexts.push({
               id: Math.random(),
               x: player.x,
@@ -735,12 +737,20 @@ export function updateGameSimulation(
     }
 
     // 3. Move Enemies & Billiard Elastic Physics
-    for (let i = 0; i < enemies.length; i++) {
-      const e = enemies[i];
-      e.x += e.vx * subDt;
-      e.y += e.vy * subDt;
-      e.vx *= Math.pow(0.92, subDt * 60);
-      e.vy *= Math.pow(0.92, subDt * 60);
+    if (player.hp <= 0) {
+      // Player is defeated: freeze all enemy movement and telegraphs immediately!
+      for (let i = 0; i < enemies.length; i++) {
+        enemies[i].vx = 0;
+        enemies[i].vy = 0;
+        enemies[i].isTelegraphing = false;
+      }
+    } else {
+      for (let i = 0; i < enemies.length; i++) {
+        const e = enemies[i];
+        e.x += e.vx * subDt;
+        e.y += e.vy * subDt;
+        e.vx *= Math.pow(0.92, subDt * 60);
+        e.vy *= Math.pow(0.92, subDt * 60);
 
       // Wall bounce for enemies
       let eBounced = false;
@@ -839,7 +849,10 @@ export function updateGameSimulation(
           }
           stats.chain = 0;
           soundManager.playPlayerHit();
-          triggerScreenShake(10);
+          // Visceral touch damage screen shake + hit-stop crunch
+          triggerScreenShake(18);
+          triggerHitStop(40);
+          createImpactSparks(particles, player.x, player.y, '#EF4444', 16);
           floatingTexts.push({
             id: Math.random(),
             x: player.x,
@@ -915,10 +928,19 @@ export function updateGameSimulation(
         }
       }
     }
+    }
   }
 
   // 4. Update Enemy AI / Attacks (Scaled by Wave difficulty)
-  updateEnemyAI(enemies, bullets, player, arenaWidth, arenaHeight, dt, stats.wave, floatingTexts);
+  if (player.hp > 0) {
+    updateEnemyAI(enemies, bullets, player, arenaWidth, arenaHeight, dt, stats.wave, floatingTexts);
+  } else {
+    for (let i = 0; i < enemies.length; i++) {
+      enemies[i].vx = 0;
+      enemies[i].vy = 0;
+      enemies[i].isTelegraphing = false;
+    }
+  }
 
   // 5. Update EXP Gems (Magnetic attraction & Vampire Survivors style pickup)
   for (let i = expGems.length - 1; i >= 0; i--) {
@@ -989,7 +1011,11 @@ export function updateGameSimulation(
       stats.highScore = Math.max(stats.highScore, stats.score);
 
       soundManager.playEnemyExplosion(e.mass);
-      triggerScreenShake(e.mass * 4);
+      const explosionShake = e.mass >= 3 ? 24 : Math.min(18, e.mass * 6.5);
+      triggerScreenShake(explosionShake);
+      if (e.mass >= 3) {
+        triggerHitStop(45);
+      }
       createExplosionSparks(particles, e.x, e.y, getEnemyColor(e.type), Math.round(e.mass * 12));
 
       // Drop EXP Gems (Vampire Survivors style!)
@@ -1240,8 +1266,10 @@ export function attemptParry(
       checkChainMilestone(prevChain, stats.chain, player, floatingTexts, shockwaves);
       player.parryCooldownTimer = 0;
       soundManager.playParry('PERFECT', Math.floor(stats.chain));
-      triggerScreenShake(8);
-      triggerHitStop(33);
+      // Visceral heavy impact shake for PERFECT parry (scaled with combo momentum)
+      const perfectShake = Math.min(22, 16 + stats.chain * 0.45);
+      triggerScreenShake(perfectShake);
+      triggerHitStop(42);
 
       shockwaves.push({
         x: player.x,
@@ -1275,7 +1303,8 @@ export function attemptParry(
       checkChainMilestone(prevChain, stats.chain, player, floatingTexts, shockwaves);
       player.parryCooldownTimer = 0;
       soundManager.playParry('GREAT', Math.floor(stats.chain));
-      triggerScreenShake(5);
+      triggerScreenShake(8);
+      triggerHitStop(25);
 
       shockwaves.push({
         x: player.x,
@@ -1436,7 +1465,9 @@ function updateEnemyAI(
       }
     } else if (e.type === 'RICOCHET_PRISM') {
       e.shieldAngle = e.angle;
-      e.shieldArc = (120 * Math.PI) / 180;
+      if (e.shieldArc !== 0) {
+        e.shieldArc = (120 * Math.PI) / 180;
+      }
       const speed = 50;
       e.vx += dir.x * speed * dt;
       e.vy += dir.y * speed * dt;

@@ -181,8 +181,11 @@ export default function App() {
     setGameKey((prev) => prev + 1);
   }, []);
 
+  const gameOverTimeRef = useRef<number>(0);
+
   const handleGameOver = useCallback((finalStats: GameStats, isVictory: boolean) => {
     setStats(finalStats);
+    gameOverTimeRef.current = Date.now();
     setGameState(isVictory ? 'VICTORY' : 'GAMEOVER');
   }, []);
 
@@ -220,10 +223,17 @@ export default function App() {
   // Global Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.code === 'KeyR' && (gameState === 'PLAYING' || gameState === 'PAUSED' || gameState === 'GAMEOVER' || gameState === 'VICTORY')) {
-        e.preventDefault();
-        handleRestart();
-        return;
+      if (e.code === 'KeyR') {
+        if (gameState === 'PLAYING' || gameState === 'PAUSED') {
+          e.preventDefault();
+          handleRestart();
+          return;
+        } else if (gameState === 'GAMEOVER' || gameState === 'VICTORY') {
+          if (Date.now() - gameOverTimeRef.current < 1500) return;
+          e.preventDefault();
+          handleRestart();
+          return;
+        }
       }
 
       if (gameState === 'TITLE') {
@@ -244,6 +254,10 @@ export default function App() {
       } else if (gameState === 'GAMEOVER' || gameState === 'VICTORY') {
         if (e.code === 'Space' || e.code === 'Enter') {
           e.preventDefault();
+          // Lockout guard: ignore accidental space mashing during parry panic
+          if (Date.now() - gameOverTimeRef.current < 1500) {
+            return;
+          }
           handleRestart();
         }
       }

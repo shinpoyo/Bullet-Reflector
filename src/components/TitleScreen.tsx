@@ -144,32 +144,53 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({ onStart, highScore }) 
       {/* Main Hero & Title Lockup (Vertically centered, compact on mobile) */}
       <div className="flex flex-col items-center text-center max-w-2xl mx-auto my-auto py-2 sm:py-4">
         {/* Title Lockup */}
-        <div className="relative mb-3 sm:mb-5">
-          <svg className="w-60 sm:w-80 md:w-[460px] h-auto drop-shadow-[0_0_25px_rgba(56,189,248,0.45)]" viewBox="0 0 520 110" fill="none">
-            <path d="M20 55 L35 25 L65 25 L80 55 L65 85 L35 85 Z" stroke="#0284C7" strokeWidth="1.5" opacity="0.4" />
-            <path d="M440 55 L455 25 L485 25 L500 55 L485 85 L455 85 Z" stroke="#FDE047" strokeWidth="1.5" opacity="0.4" />
+        <div className="relative mb-3 sm:mb-5 overflow-visible">
+          <svg
+            className="w-[280px] sm:w-[380px] md:w-[480px] h-auto overflow-visible drop-shadow-[0_0_28px_rgba(56,189,248,0.5)]"
+            viewBox="0 0 540 120"
+            fill="none"
+            overflow="visible"
+          >
+            {/* Left cyber bracket */}
+            <path d="M15 60 L30 30 L60 30 L75 60 L60 90 L30 90 Z" stroke="#0284C7" strokeWidth="1.5" opacity="0.45" />
+            {/* Right cyber bracket */}
+            <path d="M465 60 L480 30 L510 30 L525 60 L510 90 L480 90 Z" stroke="#FDE047" strokeWidth="1.5" opacity="0.45" />
+            
+            {/* Neon Cyan Outer Stroke */}
             <text
-              x="260"
-              y="58"
+              x="270"
+              y="68"
               textAnchor="middle"
-              className="font-black text-4xl sm:text-5xl tracking-widest fill-transparent stroke-cyan-400"
-              strokeWidth="4"
-              style={{ fontFamily: "'Outfit', sans-serif" }}
+              fontSize="36"
+              fontWeight="900"
+              letterSpacing="3"
+              fill="none"
+              stroke="#00E5FF"
+              strokeWidth="5"
+              strokeLinejoin="round"
+              style={{ fontFamily: "'Outfit', 'Plus Jakarta Sans', sans-serif" }}
             >
               BULLET REFLECTOR
             </text>
+
+            {/* Solid Bright Core Text */}
             <text
-              x="260"
-              y="58"
+              x="270"
+              y="68"
               textAnchor="middle"
-              className="font-black text-4xl sm:text-5xl tracking-widest fill-white"
-              style={{ fontFamily: "'Outfit', sans-serif" }}
+              fontSize="36"
+              fontWeight="900"
+              letterSpacing="3"
+              fill="#FFFFFF"
+              style={{ fontFamily: "'Outfit', 'Plus Jakarta Sans', sans-serif" }}
             >
               BULLET REFLECTOR
             </text>
-            <line x1="80" y1="78" x2="440" y2="78" stroke="url(#paint_grad)" strokeWidth="2" />
+
+            {/* Glowing Accent Underline */}
+            <line x1="75" y1="84" x2="465" y2="84" stroke="url(#paint_grad)" strokeWidth="2.5" />
             <defs>
-              <linearGradient id="paint_grad" x1="80" y1="0" x2="440" y2="0" gradientUnits="userSpaceOnUse">
+              <linearGradient id="paint_grad" x1="75" y1="0" x2="465" y2="0" gradientUnits="userSpaceOnUse">
                 <stop stopColor="#38BDF8" />
                 <stop offset="0.5" stopColor="#FDE047" />
                 <stop offset="1" stopColor="#EC4899" />

@@ -58,20 +58,42 @@ export function renderGameScene({
   const actualArenaH = arenaHeight || height;
   const zoom = cameraZoom;
 
-  // 1. Background Void (outer window bounds)
+  // 1. HARD CONTEXT RESET & HARDWARE BUFFER WIPE (Equivalent to gl.clear(gl.COLOR_BUFFER_BIT))
+  // Resets transformation matrix, alpha stack, composite blend modes, shadows, and filters so nothing persists or leaks
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.globalAlpha = 1.0;
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.shadowBlur = 0;
+  ctx.shadowColor = 'transparent';
+  ctx.filter = 'none';
+
+  // Wipe color buffer completely across the entire canvas pixel area
+  ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
   ctx.fillStyle = '#040711';
-  ctx.fillRect(0, 0, width, height);
+  ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+
+  const dpr = window.devicePixelRatio || 1;
+  ctx.scale(dpr, dpr);
 
   ctx.save();
 
-  // Camera transform: Centered on screen, zoomed and shaken
+  // Visceral Camera Transform: Centered on screen, zoomed, multi-frequency organic rumble, and micro-rotation torque
   let shakeX = 0;
   let shakeY = 0;
+  let shakeRot = 0;
   if (screenShake > 0.05) {
-    shakeX = (Math.random() - 0.5) * screenShake;
-    shakeY = (Math.random() - 0.5) * screenShake;
+    const freqFast = time * 55;
+    const freqSlow = time * 24;
+    shakeX = (Math.sin(freqFast) * 0.75 + (Math.random() - 0.5) * 0.5) * screenShake;
+    shakeY = (Math.cos(freqFast * 1.15) * 0.75 + (Math.random() - 0.5) * 0.5) * screenShake;
+    // Visceral camera roll micro-rotation (adds immense physical weight to heavy impacts)
+    shakeRot = (Math.sin(freqSlow) * 0.0016 + (Math.random() - 0.5) * 0.0012) * Math.min(screenShake, 24);
   }
+
   ctx.translate(width / 2 + shakeX, height / 2 + shakeY);
+  if (shakeRot !== 0) {
+    ctx.rotate(shakeRot);
+  }
   ctx.scale(zoom, zoom);
   ctx.translate(-actualArenaW / 2, -actualArenaH / 2);
 
@@ -235,6 +257,31 @@ export function renderGameScene({
   }
 
   ctx.restore();
+
+  // Screen-space off-screen enemy indicators (Tactical Edge Radar)
+  drawOffscreenEnemyIndicators(ctx, width, height, actualArenaW, actualArenaH, zoom, enemies);
+
+  // Screen-Space Virtual Touch Joystick Overlay (Smartphone / Touch controls)
+  if (virtualJoystick && virtualJoystick.active) {
+    drawVirtualJoystick(ctx, virtualJoystick);
+  }
+
+  // Visceral Impact Perimeter Glow on Major Damage or Massive Parries
+  if (screenShake > 8) {
+    ctx.save();
+    const flashAlpha = Math.min(0.35, (screenShake - 8) * 0.022);
+    ctx.strokeStyle = player.hp < 30 || player.invulnerableTimer > 0.6
+      ? `rgba(239, 68, 68, ${flashAlpha})`
+      : `rgba(253, 224, 71, ${flashAlpha})`;
+    ctx.lineWidth = Math.min(screenShake * 1.6, 28);
+    ctx.strokeRect(0, 0, width, height);
+    ctx.restore();
+  }
+
+  // Restore context to baseline identity transform and full opacity
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.globalAlpha = 1.0;
+  ctx.shadowBlur = 0;
 }
 
 /**
@@ -506,24 +553,46 @@ function drawPlayer(
   ctx.restore();
 
   // 6. Player Core Body
+  const isDead = player.hp <= 0;
   // Outer energetic ring
-  ctx.strokeStyle = '#38BDF8';
+  ctx.strokeStyle = isDead ? '#EF4444' : '#38BDF8';
   ctx.lineWidth = 2.5;
-  ctx.shadowColor = '#0284C7';
-  ctx.shadowBlur = 12;
+  ctx.shadowColor = isDead ? '#DC2626' : '#0284C7';
+  ctx.shadowBlur = isDead ? 22 : 12;
   ctx.beginPath();
   ctx.arc(0, 0, player.radius, 0, Math.PI * 2);
   ctx.stroke();
 
   // Inner solid core
   const grad = ctx.createRadialGradient(0, 0, 2, 0, 0, player.radius);
-  grad.addColorStop(0, '#FFFFFF');
-  grad.addColorStop(0.6, '#38BDF8');
-  grad.addColorStop(1, '#0369A1');
+  if (isDead) {
+    grad.addColorStop(0, '#FFFFFF');
+    grad.addColorStop(0.5, '#EF4444');
+    grad.addColorStop(1, '#7F1D1D');
+  } else {
+    grad.addColorStop(0, '#FFFFFF');
+    grad.addColorStop(0.6, '#38BDF8');
+    grad.addColorStop(1, '#0369A1');
+  }
   ctx.fillStyle = grad;
   ctx.beginPath();
   ctx.arc(0, 0, player.radius - 2, 0, Math.PI * 2);
   ctx.fill();
+
+  // Dramatic core fracture lightning cracks if dead
+  if (isDead) {
+    ctx.strokeStyle = '#FFFFFF';
+    ctx.lineWidth = 1.6;
+    ctx.shadowColor = '#F43F5E';
+    ctx.shadowBlur = 8;
+    ctx.beginPath();
+    ctx.moveTo(-player.radius * 0.7, -player.radius * 0.4);
+    ctx.lineTo(player.radius * 0.1, -1);
+    ctx.lineTo(player.radius * 0.65, player.radius * 0.6);
+    ctx.moveTo(player.radius * 0.1, -1);
+    ctx.lineTo(-player.radius * 0.4, player.radius * 0.65);
+    ctx.stroke();
+  }
 
   // 7. Mini In-World Health Bar with Numerical Display
   const hpRatio = clamp(player.hp / Math.max(1, player.maxHp), 0, 1);
@@ -560,11 +629,6 @@ function drawPlayer(
   }
 
   ctx.restore();
-
-  // Screen-Space Virtual Touch Joystick Overlay (Smartphone / Touch controls)
-  if (virtualJoystick && virtualJoystick.active) {
-    drawVirtualJoystick(ctx, virtualJoystick);
-  }
 }
 
 /**
@@ -834,7 +898,6 @@ function drawBullet(ctx: CanvasRenderingContext2D, b: Bullet) {
 
   // Boss Mega Core special appearance
   if (b.isBossCore) {
-    ctx.save();
     ctx.shadowColor = b.glowColor;
     ctx.shadowBlur = 24;
     ctx.fillStyle = b.color;
@@ -1041,6 +1104,79 @@ function drawEnemy(ctx: CanvasRenderingContext2D, e: Enemy, time: number) {
   ctx.restore();
 }
 
+/**
+ * Screen-space tactical radar chevrons for enemies outside or near the screen bounds.
+ * Guarantees enemies in expanded waves (Wave 3+) are instantly trackable on any PC monitor size or aspect ratio.
+ */
+function drawOffscreenEnemyIndicators(
+  ctx: CanvasRenderingContext2D,
+  screenWidth: number,
+  screenHeight: number,
+  arenaW: number,
+  arenaH: number,
+  zoom: number,
+  enemies: Enemy[]
+) {
+  const margin = 26;
+  const cx = screenWidth / 2;
+  const cy = screenHeight / 2;
+
+  for (const e of enemies) {
+    if (e.hp <= 0) continue;
+
+    // Convert enemy world position to current canvas screen coordinates
+    const sx = (e.x - arenaW / 2) * zoom + cx;
+    const sy = (e.y - arenaH / 2) * zoom + cy;
+
+    const isOffscreen = sx < margin || sx > screenWidth - margin || sy < margin || sy > screenHeight - margin;
+    if (!isOffscreen) continue;
+
+    const clampedX = clamp(sx, margin, screenWidth - margin);
+    const clampedY = clamp(sy, margin, screenHeight - margin);
+    const angle = Math.atan2(sy - cy, sx - cx);
+
+    const color = getEnemyColor(e.type);
+
+    ctx.save();
+    ctx.translate(clampedX, clampedY);
+    ctx.rotate(angle);
+
+    // Glowing tactical chevron
+    ctx.strokeStyle = color;
+    ctx.fillStyle = color;
+    ctx.shadowColor = color;
+    ctx.shadowBlur = 10;
+    ctx.lineWidth = 2.5;
+
+    ctx.beginPath();
+    ctx.moveTo(8, 0);
+    ctx.lineTo(-6, -7);
+    ctx.lineTo(-2, 0);
+    ctx.lineTo(-6, 7);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.restore();
+  }
+}
+
+function getEnemyColor(type: string): string {
+  switch (type) {
+    case 'SNIPE_ORB':
+      return '#EF4444';
+    case 'GATLING_SENTINEL':
+      return '#F97316';
+    case 'RICOCHET_PRISM':
+      return '#C084FC';
+    case 'GRAVITY_CORE':
+      return '#38BDF8';
+    default:
+      return '#EF4444';
+  }
+}
+
 function clamp(val: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, val));
 }
+
