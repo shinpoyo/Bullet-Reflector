@@ -325,6 +325,14 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({ onStart, highScore }) 
       <div className="text-center text-[10px] sm:text-xs font-mono text-slate-500 pb-1">
         <span className="sm:hidden">スマホ & PC両対応 · 1画面完結型アーケード</span>
         <span className="hidden sm:inline">WASD Move · Space / R-Click Parry · Drag Sling Dash · R Quick Retry</span>
+        <a
+          href="https://shinpoyo.com/works/bullet-reflector/"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="ml-2 underline text-slate-400 hover:text-cyan-300"
+        >
+          遊び方・ほかのゲーム
+        </a>
       </div>
 
       {/* Full Guide Modal (for mobile or desktop popup) */}
