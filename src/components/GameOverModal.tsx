@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { RotateCcw, Trophy, Flame, Shield, Target, Lock, CheckCircle2 } from 'lucide-react';
+import { RotateCcw, Trophy, Flame, Shield, Target, Lock, CheckCircle2, Share2 } from 'lucide-react';
 import { GameStats } from '../types/game';
 
 interface GameOverModalProps {
@@ -63,6 +63,18 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
   }, [stats.score]);
 
   const isLocked = lockoutRemainingMs > 0;
+
+  // 結果を X に投稿する（遊んだ人が次の人を連れてくる入口）
+  const handleShare = () => {
+    const head = isVictory ? 'MISSION ACCOMPLISHED' : `WAVE ${stats.wave} で撃墜`;
+    const text = `Bullet Reflector ${head}！\nスコア ${stats.score.toLocaleString()} / 最大コンボ ${Math.floor(stats.maxChain)} / PERFECT ${stats.perfectParries}回\n#BulletReflector #ブラウザゲーム`;
+    const url = 'https://shinpoyo.com/Bullet-Reflector/';
+    window.open(
+      `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`,
+      '_blank',
+      'noopener',
+    );
+  };
   const lockProgress = (LOCKOUT_DURATION_MS - lockoutRemainingMs) / LOCKOUT_DURATION_MS;
 
   // Keyboard shortcut listener with lockout protection
@@ -182,6 +194,14 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
             </div>
           </button>
         </div>
+
+        <button
+          onClick={handleShare}
+          className="mt-2.5 w-full py-2 px-4 rounded-xl border border-slate-700 bg-slate-800/60 hover:bg-slate-800 text-slate-200 text-xs font-bold tracking-wider flex items-center justify-center gap-2 cursor-pointer"
+        >
+          <Share2 className="w-3.5 h-3.5" />
+          <span>結果を X でシェア</span>
+        </button>
 
         {/* Lockout status reminder */}
         <p className="mt-2.5 text-[11px] font-mono text-slate-400">
